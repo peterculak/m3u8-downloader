@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Internal storage (registry, temp files) -->
+    <files-path name="internal_downloads" path="downloads/" />
+    <!-- Public Downloads folder: /sdcard/Download/TA3/ -->
+    <external-path name="public_downloads" path="Download/TA3/" />
+</paths>

@@ -1,0 +1,31 @@
+# User requested ignores
+ta3-cli/config.json
+ta3-cli/download_history.json
+
+# Local downloads and temporary scraper files
+ta3-cli/downloads/
+
+# Node.js
+node_modules/
+ta3-cli/node_modules/
+
+# Android build outputs & local config
+.gradle/
+build/
+local.properties
+ta3-android/.gradle/
+ta3-android/build/
+ta3-android/local.properties
+ta3-android/.kotlin/
+
+# IDE files
+.idea/
+ta3-android/.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Memory dumps
+*.hprof

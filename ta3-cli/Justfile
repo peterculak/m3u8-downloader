@@ -1,0 +1,30 @@
+# Download YouTube video as m4a audio only
+yt-audio url filename="":
+    #!/usr/bin/env bash
+    if [ -z "{{filename}}" ]; then
+        yt-dlp --replace-in-metadata title " +" "-" -f "bestaudio[ext=m4a]" -o "downloads/youtube/%(title)s.%(ext)s" "{{url}}"
+    else
+        yt-dlp -f "bestaudio[ext=m4a]" -o "downloads/youtube/{{filename}}.%(ext)s" "{{url}}"
+    fi
+
+# Download any m3u8 stream as an m4a audio file
+m3u8-audio url filename="audio":
+    ffmpeg -y -i "{{url}}" -vn -c:a aac -b:a 256k "{{filename}}.m4a"
+
+# Clean all downloaded m4a audio files
+clean:
+    find downloads -type f -name "*.m4a" -delete
+
+# Clean files and reset download history
+clear: clean
+    echo "[]" > download_history.json
+
+# Run the automated daily show downloader
+run-downloader:
+    node downloader.js
+
+# Download daily shows from ta3 (supports --days N, --all, etc.)
+ta3 *args="":
+    node downloader.js {{args}}
+
+
