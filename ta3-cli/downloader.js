@@ -47,8 +47,7 @@ let drawInterval;
 
 function initDisplay(tasks) {
   downloadTasks = tasks;
-
-  // Clear space for progress bars (one line per task)
+  // Reserve space for progress bars (one line per task)
   for (let i = 0; i < downloadTasks.length; i++) {
     process.stdout.write('\n');
   }
@@ -62,62 +61,60 @@ function stopDisplay() {
 
 function draw() {
   const lineCount = downloadTasks.length;
-  // Move cursor up by lineCount lines
+  // Move cursor up by lineCount lines to overwrite them
   process.stdout.write(`\x1B[${lineCount}A`);
-  
+
   for (let i = 0; i < lineCount; i++) {
     const task = downloadTasks[i];
-    // Clear line
+    // Clear line and rewrite
     process.stdout.write('\x1B[2K\r');
-    
+
     const barLength = 15;
     const filledLength = Math.round(barLength * (task.progress / 100));
     const emptyLength = barLength - filledLength;
     const bar = '█'.repeat(filledLength) + '░'.repeat(emptyLength);
-    
-    // Truncate show name + title to fit nicely and avoid wrapping
+
     const displayName = `[${task.showName}] ${task.title}`;
-    const displayNameShort = displayName.length > 40 
-      ? displayName.substring(0, 37) + '...' 
+    const displayNameShort = displayName.length > 40
+      ? displayName.substring(0, 37) + '...'
       : displayName.padEnd(40);
-    
+
     let progressIndicator = '';
-    if (task.totalSeconds > 0) {
+    if (task.progress > 0 || task.status === 'Downloading') {
       progressIndicator = `[${bar}] ${Math.round(task.progress).toString().padStart(3)}%`;
     } else {
       progressIndicator = `[${task.currentTimeStr}]`.padEnd(22);
     }
 
-    const speedStr = (task.speed || 'N/A').padStart(6);
-    
-    // Nice colored status text
+    const speedStr = (task.speed || 'N/A').padStart(10);
+
     let statusText = task.status;
     if (task.status === 'Finished') {
-      statusText = `\x1B[32m${task.status}\x1B[0m`; // Green
+      statusText = `\x1B[32m${task.status}\x1B[0m`;
     } else if (task.status === 'Failed' || task.status.startsWith('Error')) {
-      statusText = `\x1B[31m${task.status}\x1B[0m`; // Red
+      statusText = `\x1B[31m${task.status}\x1B[0m`;
     } else if (task.status === 'Downloading') {
-      statusText = `\x1B[34m${task.status}\x1B[0m`; // Blue
+      statusText = `\x1B[34m${task.status}\x1B[0m`;
     } else if (task.status === 'Starting...' || task.status === 'Resolving...') {
-      statusText = `\x1B[33m${task.status}\x1B[0m`; // Yellow
+      statusText = `\x1B[33m${task.status}\x1B[0m`;
     } else {
-      statusText = `\x1B[90m${task.status}\x1B[0m`; // Gray (Pending)
+      statusText = `\x1B[90m${task.status}\x1B[0m`;
     }
 
     process.stdout.write(`${displayNameShort} ${progressIndicator} | ${speedStr} | ${statusText}\n`);
   }
 }
 
-// Helper to run the just command asynchronously with output parsing
-function runJustCommandWithProgress(args, cwd, task) {
+// Helper to run just m3u8-audio with ffmpeg progress parsing
+function runDownload(m3u8Url, targetPath, task) {
   return new Promise((resolve) => {
-    const proc = spawn('just', args, { cwd });
-    
+    const proc = spawn('just', ['m3u8-audio', m3u8Url, targetPath], { cwd: __dirname });
+
     let buffer = '';
-    proc.stderr.on('data', (chunk) => {
+    const handleData = (chunk) => {
       buffer += chunk.toString();
       const lines = buffer.split(/[\r\n]+/);
-      buffer = lines.pop(); // Keep incomplete line in buffer
+      buffer = lines.pop();
 
       for (const line of lines) {
         // Parse Duration (e.g., Duration: 00:26:21.15)
@@ -136,35 +133,29 @@ function runJustCommandWithProgress(args, cwd, task) {
           const m = parseInt(progressMatch[2], 10);
           const s = parseInt(progressMatch[3], 10);
           const currentSeconds = h * 3600 + m * 60 + s;
-          
           task.currentTimeStr = `${progressMatch[1]}:${progressMatch[2]}:${progressMatch[3]}`;
           if (task.totalSeconds > 0) {
             task.progress = Math.min(100, (currentSeconds / task.totalSeconds) * 100);
           }
-          
-          // Parse speed (e.g., speed= 24x)
           const speedMatch = line.match(/speed=\s*([0-9.]+)x/i);
-          if (speedMatch) {
-            task.speed = `${speedMatch[1]}x`;
-          }
+          if (speedMatch) task.speed = `${speedMatch[1]}x`;
           task.status = 'Downloading';
         }
       }
-    });
+    };
 
-    proc.on('close', (code) => {
-      resolve(code);
-    });
-    
-    proc.on('error', (err) => {
-      resolve(-1);
-    });
+    // ffmpeg writes to stderr
+    proc.stderr.on('data', handleData);
+    proc.stdout.on('data', handleData);
+
+    proc.on('close', (code) => { resolve(code); });
+    proc.on('error', () => { resolve(-1); });
   });
 }
 
 async function downloadEpisode(item, task, history, saveHistory) {
   const { ep, show, defaultFolder } = item;
-  
+
   task.status = 'Resolving...';
   task.progress = 0;
   task.speed = 'N/A';
@@ -185,7 +176,7 @@ async function downloadEpisode(item, task, history, saveHistory) {
     }
     const videoId = videoIdMatch[1];
 
-    // 3. Fetch VOD source template to get fresh auth token
+    // 3. Fetch VOD source template
     const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2/vod-source.js', {
       'Referer': ep.url,
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -197,10 +188,48 @@ async function downloadEpisode(item, task, history, saveHistory) {
       return;
     }
 
-    const m3u8Url = 'https:' + srcMatch[1].replace('{0}', videoId);
+    const masterM3u8Url = 'https:' + srcMatch[1].replace('{0}', videoId);
 
-    // 4. Construct file path (with year/month/day subfolders)
-    const baseDownloadDir = show.downloadFolder 
+    // 4. Parse master playlist to find the lowest-bandwidth variant (much less data to download)
+    let downloadUrl = masterM3u8Url;
+    try {
+      const masterPlaylist = await fetchText(masterM3u8Url, {
+        'Referer': 'https://www.ta3.com/',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      });
+
+      // Find variant with lowest BANDWIDTH
+      const variants = [];
+      const lines = masterPlaylist.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('#EXT-X-STREAM-INF:')) {
+          const bwMatch = line.match(/BANDWIDTH=(\d+)/);
+          const nextLine = lines[i + 1] ? lines[i + 1].trim() : '';
+          if (bwMatch && nextLine && !nextLine.startsWith('#')) {
+            variants.push({ bandwidth: parseInt(bwMatch[1], 10), uri: nextLine });
+          }
+        }
+      }
+
+      if (variants.length > 0) {
+        variants.sort((a, b) => a.bandwidth - b.bandwidth);
+        const lowestVariant = variants[0];
+        // Resolve relative URLs
+        if (lowestVariant.uri.startsWith('http')) {
+          downloadUrl = lowestVariant.uri;
+        } else {
+          const base = masterM3u8Url.substring(0, masterM3u8Url.lastIndexOf('/') + 1);
+          downloadUrl = base + lowestVariant.uri;
+        }
+      }
+    } catch (_) {
+      // Fall back to master URL if variant parsing fails
+      downloadUrl = masterM3u8Url;
+    }
+
+    // 5. Construct output file path
+    const baseDownloadDir = show.downloadFolder
       ? (path.isAbsolute(show.downloadFolder) ? show.downloadFolder : path.join(__dirname, show.downloadFolder))
       : (path.isAbsolute(defaultFolder) ? defaultFolder : path.join(__dirname, defaultFolder));
 
@@ -213,24 +242,29 @@ async function downloadEpisode(item, task, history, saveHistory) {
 
     const cleanTitle = sanitizeTitle(ep.title);
     const targetPath = path.join(downloadDir, cleanTitle);
+    const fullPath = targetPath + '.m4a';
 
     task.status = 'Starting...';
 
-    const exitCode = await runJustCommandWithProgress(['m3u8-audio', m3u8Url, targetPath], __dirname, task);
+    const exitCode = await runDownload(downloadUrl, targetPath, task);
 
     if (exitCode === 0) {
       task.status = 'Finished';
       task.progress = 100;
       history.push(ep.url);
       saveHistory();
+      return fullPath;
     } else {
       task.status = `Error: Exit ${exitCode}`;
+      return null;
     }
 
   } catch (err) {
     task.status = 'Failed';
+    return null;
   }
 }
+
 
 async function main() {
   const configPath = path.join(__dirname, 'config.json');
@@ -258,6 +292,7 @@ async function main() {
   };
 
   const fetchAll = process.argv.includes('--all') || process.argv.includes('-a');
+  const shouldShare = process.argv.includes('--share') || process.argv.includes('-s');
 
   let numberOfDays = 1;
   let targetShowName = null;
@@ -414,6 +449,7 @@ async function main() {
   initDisplay(tasks);
 
   // 2. Parallel execution pool
+  const filesToShare = [];
   const numWorkers = Math.min(limit, pendingQueue.length);
   const workers = [];
   for (let i = 0; i < numWorkers; i++) {
@@ -421,7 +457,10 @@ async function main() {
       while (pendingQueue.length > 0) {
         const item = pendingQueue.shift();
         const task = tasks.find(t => t.id === item.ep.url);
-        await downloadEpisode(item, task, history, saveHistory);
+        const downloadedPath = await downloadEpisode(item, task, history, saveHistory);
+        if (downloadedPath) {
+          filesToShare.push(downloadedPath);
+        }
       }
     })());
   }
@@ -429,6 +468,67 @@ async function main() {
   await Promise.all(workers);
   stopDisplay();
   console.log('\nAll downloads completed.');
+
+  // 3. Share files sequentially via WhatsApp if requested
+  if (shouldShare && filesToShare.length > 0 && config.whatsAppContact) {
+    console.log(`\nSharing ${filesToShare.length} file(s) via WhatsApp to "${config.whatsAppContact}"...`);
+    for (const filePath of filesToShare) {
+      try {
+        console.log(`Sharing: ${path.basename(filePath)}`);
+        await shareViaWhatsApp(filePath, config.whatsAppPhone);
+        // Wait 4 seconds to let WhatsApp UI process the send operation and stabilize
+        await new Promise(r => setTimeout(r, 4000));
+      } catch (err) {
+        console.error(`Failed to share ${path.basename(filePath)}: ${err.message}`);
+      }
+    }
+  }
+}
+
+function shareViaWhatsApp(filePath, phoneNumber) {
+  return new Promise((resolve, reject) => {
+    const escapedPath = filePath.replace(/"/g, '\\"');
+
+    const appleScript = `
+-- Copy file to clipboard as a file reference
+set thePath to POSIX file "${escapedPath}"
+set the clipboard to thePath as «class furl»
+
+-- Open chat directly via URL scheme (bypasses search bar entirely)
+do shell script "open 'whatsapp://send?phone=${phoneNumber}'"
+delay 3.0 -- Wait for WhatsApp to open the chat and focus the message input
+
+tell application "System Events"
+  tell process "WhatsApp"
+    -- Paste the file
+    keystroke "v" using {command down}
+    delay 3.0
+    
+    -- Press Enter to send from the media preview screen
+    key code 36
+    delay 1.0
+  end tell
+end tell
+`;
+
+    const proc = spawn('osascript', []);
+    let stderr = '';
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    proc.stdin.write(appleScript);
+    proc.stdin.end();
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`osascript exited with code ${code}. Error: ${stderr.trim()}`));
+      }
+    });
+
+    proc.on('error', reject);
+  });
 }
 
 main().catch(console.error);
