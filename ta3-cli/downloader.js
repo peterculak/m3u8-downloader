@@ -34,11 +34,10 @@ function sanitizeTitle(title) {
     .replace(/[\s_]+/g, '-'); // Replace spaces and underscores with a single dash
 }
 
-// Helper to get local date string YYYY-MM-DD
+// Helper to get date string YYYY-MM-DD in Slovak timezone (Europe/Bratislava),
+// matching the data-date attribute used by ta3.com
 function getLocalDateString(date) {
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - (offset * 60 * 1000));
-  return localDate.toISOString().split('T')[0];
+  return date.toLocaleDateString('en-CA', { timeZone: 'Europe/Bratislava' });
 }
 
 // Global UI state
