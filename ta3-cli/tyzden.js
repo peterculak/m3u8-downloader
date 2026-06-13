@@ -129,7 +129,8 @@ function sanitizeTitle(title) {
     .replace(/[\u0300-\u036f]/g, '')     // strip diacritics
     .replace(/[^a-zA-Z0-9\s\-_]/g, '')  // keep alphanum / spaces / dash / underscore
     .trim()
-    .replace(/[\s_]+/g, '-');            // collapse spaces → dash
+    .replace(/[\s_]+/g, '-')            // collapse spaces → dash
+    .replace(/^\.+/, '');               // strip leading dots (hidden files in Finder)
 }
 
 // ---------------------------------------------------------------------------

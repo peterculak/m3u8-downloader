@@ -31,7 +31,8 @@ function sanitizeTitle(title) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9\s-_]/g, '') // Keep alphanumeric, spaces, dashes, underscores
     .trim()
-    .replace(/[\s_]+/g, '-'); // Replace spaces and underscores with a single dash
+    .replace(/[\s_]+/g, '-') // Replace spaces and underscores with a single dash
+    .replace(/^\.+/, '');    // Strip leading dots (hidden files in Finder)
 }
 
 // Helper to get date string YYYY-MM-DD in Slovak timezone (Europe/Bratislava),
