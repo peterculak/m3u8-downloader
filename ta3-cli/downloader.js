@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
+const { sanitizeTitle } = require('./utils');
 
 // Helper to make HTTPS GET requests returning text content
 function fetchText(url, headers = {}) {
@@ -22,17 +23,6 @@ function fetchText(url, headers = {}) {
       res.on('end', () => resolve(data));
     }).on('error', reject);
   });
-}
-
-// Helper to sanitize title for filename
-function sanitizeTitle(title) {
-  return title
-    .normalize("NFD") // Remove accents/diacritics
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9\s-_]/g, '') // Keep alphanumeric, spaces, dashes, underscores
-    .trim()
-    .replace(/[\s_]+/g, '-') // Replace spaces and underscores with a single dash
-    .replace(/^\.+/, '');    // Strip leading dots (hidden files in Finder)
 }
 
 // Helper to get date string YYYY-MM-DD in Slovak timezone (Europe/Bratislava),

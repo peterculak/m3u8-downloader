@@ -6,6 +6,7 @@ const path = require('path');
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
+const { sanitizeTitle } = require('./utils');
 
 // ---------------------------------------------------------------------------
 // Helper: HTTPS/HTTP GET returning full body as a string
@@ -120,18 +121,7 @@ function downloadFile(url, destPath) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Helper: Sanitize a title for use as a filename
-// ---------------------------------------------------------------------------
-function sanitizeTitle(title) {
-  return title
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')     // strip diacritics
-    .replace(/[^a-zA-Z0-9\s\-_]/g, '')  // keep alphanum / spaces / dash / underscore
-    .trim()
-    .replace(/[\s_]+/g, '-')            // collapse spaces → dash
-    .replace(/^\.+/, '');               // strip leading dots (hidden files in Finder)
-}
+
 
 // ---------------------------------------------------------------------------
 // Step 1: Fetch tyzden.sk article and extract Podbean player iframe src
