@@ -13,9 +13,9 @@ yt-audio url *args="":
 
     if [ -z "$FILENAME" ]; then
         if [ "$SHARE" = "true" ]; then
-            yt-dlp --replace-in-metadata title " +" "-" -f "bestaudio[ext=m4a]" -o "downloads/youtube/%(title)s.%(ext)s" --exec "node share.js {}" "{{url}}"
+            yt-dlp --replace-in-metadata title " +" "-" --replace-in-metadata title "^[\.-]+" "" -f "bestaudio[ext=m4a]" -o "downloads/youtube/%(title)s.%(ext)s" --exec "node share.js {}" "{{url}}"
         else
-            yt-dlp --replace-in-metadata title " +" "-" -f "bestaudio[ext=m4a]" -o "downloads/youtube/%(title)s.%(ext)s" "{{url}}"
+            yt-dlp --replace-in-metadata title " +" "-" --replace-in-metadata title "^[\.-]+" "" -f "bestaudio[ext=m4a]" -o "downloads/youtube/%(title)s.%(ext)s" "{{url}}"
         fi
     else
         if [ "$SHARE" = "true" ]; then
