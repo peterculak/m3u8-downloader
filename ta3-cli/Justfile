@@ -45,4 +45,8 @@ run-downloader:
 ta3 *args="":
     node downloader.js {{args}}
 
+# Download a podcast episode from a tyzden.sk article URL
+# Usage: just tyzden <url>
+tyzden url:
+    node tyzden.js "{{url}}"
 
