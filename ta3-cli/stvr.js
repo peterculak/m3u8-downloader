@@ -46,36 +46,50 @@ function fetchText(url, headers = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: Download m3u8 stream to mp4 via yt-dlp (parallel segment downloads)
+// Helper: Download audio-only from m3u8 via ffmpeg (strips video track)
 // ---------------------------------------------------------------------------
-function downloadM3u8(m3u8Url, destPath) {
+function downloadAudio(m3u8Url, destPath) {
   return new Promise((resolve, reject) => {
     console.log('  Starting download...');
 
-    // yt-dlp with concurrent fragments is significantly faster than ffmpeg
-    // for HLS streams — downloads multiple segments in parallel
-    const proc = spawn('yt-dlp', [
-      '--concurrent-fragments', '10',
-      '--no-part',
-      '-o', destPath,
-      m3u8Url,
+    const proc = spawn('ffmpeg', [
+      '-y',
+      '-loglevel', 'verbose',
+      '-headers', 'Referer: https://www.stvr.sk/\r\n',
+      '-i', m3u8Url,
+      '-vn',          // drop video
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      destPath,
     ]);
 
+    let buffer = '';
+    let totalSeconds = 0;
+
     const handleData = (chunk) => {
-      const lines = chunk.toString().split(/[\r\n]+/);
+      buffer += chunk.toString();
+      const lines = buffer.split(/[\r\n]+/);
+      buffer = lines.pop();
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed) process.stdout.write(`\r  ${trimmed}                    `);
+        const dur = line.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2})/i);
+        if (dur) totalSeconds = parseInt(dur[1]) * 3600 + parseInt(dur[2]) * 60 + parseInt(dur[3]);
+        const t = line.match(/time=(\d{2}):(\d{2}):(\d{2})/i);
+        if (t) {
+          const cur = parseInt(t[1]) * 3600 + parseInt(t[2]) * 60 + parseInt(t[3]);
+          const pct = totalSeconds > 0 ? Math.min(100, (cur / totalSeconds) * 100).toFixed(1) : '?';
+          const spd = (line.match(/speed=\s*([0-9.]+)x/i) || [])[1] || '';
+          process.stdout.write(`\r  ${t[1]}:${t[2]}:${t[3]} / ${pct}%  ${spd}    `);
+        }
       }
     };
 
-    proc.stdout.on('data', handleData);
     proc.stderr.on('data', handleData);
+    proc.stdout.on('data', handleData);
 
     proc.on('close', (code) => {
       process.stdout.write('\n');
       if (code === 0) resolve(destPath);
-      else reject(new Error(`yt-dlp exited with code ${code}`));
+      else reject(new Error(`ffmpeg exited with code ${code}`));
     });
 
     proc.on('error', reject);
@@ -173,7 +187,7 @@ async function main() {
     const outDir = path.join(__dirname, 'downloads', 'stvr.sk', datePath);
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-    const filename = sanitizeTitle(title) + '.mp4';
+    const filename = sanitizeTitle(title) + '.m4a';
     const destPath = path.join(outDir, filename);
 
     if (fs.existsSync(destPath)) {
@@ -183,8 +197,8 @@ async function main() {
 
     console.log(`\nSaving to: ${destPath}`);
 
-    // 4. Download via ffmpeg
-    await downloadM3u8(src, destPath);
+    // 4. Download audio only via ffmpeg
+    await downloadAudio(src, destPath);
 
     console.log(`\nDone! Saved to:\n  ${destPath}`);
     process.exit(0);
