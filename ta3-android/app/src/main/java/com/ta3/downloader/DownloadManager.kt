@@ -33,7 +33,7 @@ class DownloadManager(private val context: Context) {
      * Visible to any file manager or media app on the device.
      */
     private fun showDownloadDir(showName: String): File {
-        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
         return File(base, "TA3/$showName").also { it.mkdirs() }
     }
 
@@ -171,19 +171,9 @@ class DownloadManager(private val context: Context) {
      */
     private fun notifyMediaStore(file: File) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-                    put(MediaStore.Downloads.MIME_TYPE, "audio/mp4")
-                    put(MediaStore.Downloads.SIZE, file.length())
-                }
-                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            } else {
-                @Suppress("DEPRECATION")
-                android.media.MediaScannerConnection.scanFile(
-                    context, arrayOf(file.absolutePath), arrayOf("audio/mp4"), null
-                )
-            }
+            android.media.MediaScannerConnection.scanFile(
+                context, arrayOf(file.absolutePath), arrayOf("audio/mp4"), null
+            )
         } catch (_: Exception) { /* non-fatal */ }
     }
 }
