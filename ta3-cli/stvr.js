@@ -55,7 +55,7 @@ function downloadM3u8(m3u8Url, destPath) {
     // yt-dlp with concurrent fragments is significantly faster than ffmpeg
     // for HLS streams — downloads multiple segments in parallel
     const proc = spawn('yt-dlp', [
-      '--concurrent-fragments', '5',
+      '--concurrent-fragments', '10',
       '--no-part',
       '-o', destPath,
       m3u8Url,
