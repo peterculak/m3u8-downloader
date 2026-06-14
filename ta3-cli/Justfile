@@ -50,3 +50,7 @@ ta3 *args="":
 tyzden url:
     node tyzden.js "{{url}}"
 
+# Download an archive episode from stvr.sk
+# Usage: just stvr <url>
+stvr url:
+    node stvr.js "{{url}}"
