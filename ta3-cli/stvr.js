@@ -46,63 +46,36 @@ function fetchText(url, headers = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: Download m3u8 stream to mp4 via ffmpeg with progress output
+// Helper: Download m3u8 stream to mp4 via yt-dlp (parallel segment downloads)
 // ---------------------------------------------------------------------------
 function downloadM3u8(m3u8Url, destPath) {
   return new Promise((resolve, reject) => {
-    console.log('  Starting ffmpeg download...');
+    console.log('  Starting download...');
 
-    const proc = spawn('ffmpeg', [
-      '-y',
-      '-loglevel', 'verbose',
-      '-headers', 'Referer: https://www.stvr.sk/\r\n',
-      '-i', m3u8Url,
-      '-c', 'copy',
-      destPath,
+    // yt-dlp with concurrent fragments is significantly faster than ffmpeg
+    // for HLS streams — downloads multiple segments in parallel
+    const proc = spawn('yt-dlp', [
+      '--concurrent-fragments', '5',
+      '--no-part',
+      '-o', destPath,
+      m3u8Url,
     ]);
 
-    let buffer = '';
-    let totalSeconds = 0;
-
     const handleData = (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split(/[\r\n]+/);
-      buffer = lines.pop();
-
+      const lines = chunk.toString().split(/[\r\n]+/);
       for (const line of lines) {
-        const durationMatch = line.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2})/i);
-        if (durationMatch) {
-          totalSeconds =
-            parseInt(durationMatch[1], 10) * 3600 +
-            parseInt(durationMatch[2], 10) * 60 +
-            parseInt(durationMatch[3], 10);
-        }
-
-        const timeMatch = line.match(/time=(\d{2}):(\d{2}):(\d{2})/i);
-        if (timeMatch) {
-          const current =
-            parseInt(timeMatch[1], 10) * 3600 +
-            parseInt(timeMatch[2], 10) * 60 +
-            parseInt(timeMatch[3], 10);
-          const pct = totalSeconds > 0
-            ? Math.min(100, ((current / totalSeconds) * 100)).toFixed(1)
-            : '?';
-          const speedMatch = line.match(/speed=\s*([0-9.]+)x/i);
-          const speed = speedMatch ? `${speedMatch[1]}x` : '';
-          process.stdout.write(
-            `\r  ${timeMatch[1]}:${timeMatch[2]}:${timeMatch[3]} / ${pct}%  ${speed}    `
-          );
-        }
+        const trimmed = line.trim();
+        if (trimmed) process.stdout.write(`\r  ${trimmed}                    `);
       }
     };
 
-    proc.stderr.on('data', handleData);
     proc.stdout.on('data', handleData);
+    proc.stderr.on('data', handleData);
 
     proc.on('close', (code) => {
       process.stdout.write('\n');
       if (code === 0) resolve(destPath);
-      else reject(new Error(`ffmpeg exited with code ${code}`));
+      else reject(new Error(`yt-dlp exited with code ${code}`));
     });
 
     proc.on('error', reject);
