@@ -63,3 +63,8 @@ Before downloading, check if the output file already exists on disk and skip wit
 | `just stvr <url>` | Download an stvr.sk TV archive episode (audio only) |
 | `just yt-audio <url>` | Download YouTube audio as m4a |
 | `just m3u8-audio <url> <filename>` | Download any m3u8 stream as m4a |
+
+## Never Guess Endpoints
+
+When implementing a scraper or API client, **never guess the login flow or API endpoints**.
+Always use `curl` to fetch the real webpage, submit test credentials, and prove the exact URL, HTTP method, and required parameters (e.g., hidden framework parameters like `_do` rather than assuming a standard `csrf_token`) **before** writing any implementation code. Assumptions lead to 404s and broken code.

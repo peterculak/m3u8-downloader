@@ -37,10 +37,20 @@ class DownloadEpisodeWorker(
 
         return try {
             val episode = Episode(title = title, date = date, url = episodeUrl, showName = showName)
+            val directUrl = inputData.getString(KEY_DIRECT_URL)
 
-            downloadManager.download(episode) { progress ->
-                DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
-                setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))
+            if (directUrl != null) {
+                // Prehraj.to direct MP4 download — skip m3u8 resolution
+                downloadManager.downloadDirectMp4(episode, directUrl) { progress ->
+                    DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
+                    setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))
+                }
+            } else {
+                // TA3 HLS download
+                downloadManager.download(episode) { progress ->
+                    DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
+                    setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))
+                }
             }
 
             DownloadStateTracker.updateProgress(episodeUrl, 1f, DownloadStatus.DONE)
@@ -70,6 +80,7 @@ class DownloadEpisodeWorker(
         const val KEY_TITLE = "title"
         const val KEY_DATE = "date"
         const val KEY_SHOW_NAME = "show_name"
+        const val KEY_DIRECT_URL = "direct_url"  // optional — skip m3u8, use direct MP4
         const val KEY_PROGRESS = "progress"
         const val KEY_STATUS = "status"
         const val KEY_ERROR = "error"
@@ -78,22 +89,22 @@ class DownloadEpisodeWorker(
          * Enqueue a one-time download for an episode.
          * Returns the WorkRequest UUID so the ViewModel can observe it.
          */
-        fun enqueue(context: Context, episode: Episode): UUID {
+        fun enqueue(context: Context, episode: Episode, directUrl: String? = null): UUID {
+            val dataBuilder = Data.Builder()
+                .putString(KEY_URL, episode.url)
+                .putString(KEY_TITLE, episode.title)
+                .putString(KEY_DATE, episode.date)
+                .putString(KEY_SHOW_NAME, episode.showName)
+            if (directUrl != null) dataBuilder.putString(KEY_DIRECT_URL, directUrl)
+
             val request = OneTimeWorkRequestBuilder<DownloadEpisodeWorker>()
-                .setInputData(
-                    workDataOf(
-                        KEY_URL to episode.url,
-                        KEY_TITLE to episode.title,
-                        KEY_DATE to episode.date,
-                        KEY_SHOW_NAME to episode.showName
-                    )
-                )
+                .setInputData(dataBuilder.build())
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
                         .build()
                 )
-                .addTag(episode.url) // Tag by URL so we can cancel by episode
+                .addTag(episode.url)
                 .build()
 
             WorkManager.getInstance(context).enqueue(request)

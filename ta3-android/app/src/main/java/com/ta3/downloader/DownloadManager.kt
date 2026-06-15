@@ -21,7 +21,8 @@ class DownloadManager(private val context: Context) {
     private val gson = Gson()
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
     // Registry lives in internal storage (always accessible to this app)
@@ -33,8 +34,13 @@ class DownloadManager(private val context: Context) {
      * Visible to any file manager or media app on the device.
      */
     private fun showDownloadDir(showName: String): File {
-        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         return File(base, "TA3/$showName").also { it.mkdirs() }
+    }
+
+    private fun prehrajDownloadDir(): File {
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return File(base, "Prehraj").also { it.mkdirs() }
     }
 
     private val registryMutex = kotlinx.coroutines.sync.Mutex()
@@ -166,14 +172,119 @@ class DownloadManager(private val context: Context) {
     }
 
     /**
+     * Download a prehraj.to movie from a direct MP4 URL using plain HTTP streaming.
+     * Saves to public Downloads/Prehraj/<title>.mp4
+     * No FFmpeg — the file is already a valid MP4, just stream it down directly.
+     */
+    suspend fun downloadDirectMp4(
+        episode: Episode,
+        directUrl: String,
+        onProgress: (Float) -> Unit
+    ): DownloadedFile = withContext(Dispatchers.IO) {
+        onProgress(0f)
+
+        val safeTitle = episode.title
+            .replace(Regex("[^a-zA-Z0-9áäčďéíľĺňóôŕšťúýžÁÄČĎÉÍĽĹŇÓÔŔŠŤÚÝŽ ._-]"), "")
+            .trim()
+            .replace(" ", "_")
+            .take(80)
+        val fileName = if (episode.date.isNotEmpty()) "${episode.date}-${safeTitle}.mp4"
+                       else "${safeTitle}.mp4"
+        val outFile = File(prehrajDownloadDir(), fileName)
+        if (outFile.exists()) outFile.delete()
+
+        // Stream directly via OkHttp — same approach as the JS POC
+        val request = Request.Builder()
+            .url(directUrl)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36")
+            .header("Referer", "https://prehraj.to/")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code} downloading video")
+
+            val contentLength = response.body?.contentLength() ?: -1L
+            var downloaded = 0L
+
+            var lastReportedProgress = 0f
+            val buffer = ByteArray(256 * 1024)  // 256 KB chunks — reduces syscall overhead vs 8 KB
+            java.io.BufferedOutputStream(FileOutputStream(outFile), 256 * 1024).use { out ->
+                val input = response.body!!.byteStream()
+                var bytes = input.read(buffer)
+                while (bytes >= 0) {
+                    out.write(buffer, 0, bytes)
+                    downloaded += bytes
+                    if (contentLength > 0) {
+                        val currentProgress = (downloaded.toFloat() / contentLength).coerceIn(0f, 0.99f)
+                        if (currentProgress - lastReportedProgress >= 0.01f) {
+                            onProgress(currentProgress)
+                            lastReportedProgress = currentProgress
+                        }
+                    } else {
+                        onProgress(0.5f)
+                    }
+                    bytes = input.read(buffer)
+                }
+            }
+        }
+
+        notifyMediaStoreVideo(outFile)
+
+        val record = DownloadedFile(
+            episodeUrl = episode.url,
+            title = episode.title,
+            date = episode.date,
+            showName = episode.showName,
+            localPath = outFile.absolutePath,
+            fileSizeBytes = outFile.length()
+        )
+        registryMutex.withLock {
+            val registry = loadRegistryInternal().filter { it.episodeUrl != episode.url }.toMutableList()
+            registry.add(0, record)
+            saveRegistryInternal(registry)
+        }
+
+        record
+    }
+
+
+    /**
      * Tell the Android media scanner about the new file so it shows up
      * immediately in VLC, Poweramp, etc. without requiring a manual rescan.
      */
     private fun notifyMediaStore(file: File) {
         try {
-            android.media.MediaScannerConnection.scanFile(
-                context, arrayOf(file.absolutePath), arrayOf("audio/mp4"), null
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, file.name)
+                    put(MediaStore.Downloads.MIME_TYPE, "audio/mp4")
+                    put(MediaStore.Downloads.SIZE, file.length())
+                }
+                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            } else {
+                @Suppress("DEPRECATION")
+                android.media.MediaScannerConnection.scanFile(
+                    context, arrayOf(file.absolutePath), arrayOf("audio/mp4"), null
+                )
+            }
+        } catch (_: Exception) { /* non-fatal */ }
+    }
+
+    private fun notifyMediaStoreVideo(file: File) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, file.name)
+                    put(MediaStore.Downloads.MIME_TYPE, "video/mp4")
+                    put(MediaStore.Downloads.SIZE, file.length())
+                }
+                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            } else {
+                @Suppress("DEPRECATION")
+                android.media.MediaScannerConnection.scanFile(
+                    context, arrayOf(file.absolutePath), arrayOf("video/mp4"), null
+                )
+            }
         } catch (_: Exception) { /* non-fatal */ }
     }
 }

@@ -42,6 +42,15 @@ data class ActiveDownload(
     val errorMessage: String? = null
 )
 
+// ─── Prehraj.to Models ────────────────────────────────────────────────────────
+
+data class PrehrajMovie(
+    val title: String,
+    val year: String = "",
+    val pageUrl: String,        // https://prehraj.to/<slug>/<id>
+    val thumbnailUrl: String = ""
+)
+
 // ─── TA3 Show Definitions (same URLs as ta3-cli/config.json) ─────────────────
 
 val TA3_SHOWS = listOf(

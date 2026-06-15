@@ -52,10 +52,9 @@ class AutoDownloadWorker(
                     Log.d(TAG, "Fetching episodes for ${show.displayName}")
                     val episodes = Scraper.fetchEpisodes(show)
 
-                    // Only consider today's and yesterday's episodes (like CLI --days 2)
+                    // Only consider today's episodes
                     val today = todayString()
-                    val yesterday = yesterdayString()
-                    val recent = episodes.filter { it.date == today || it.date == yesterday }
+                    val recent = episodes.filter { it.date == today }
 
                     for (episode in recent) {
                         // Skip if already downloaded
@@ -158,8 +157,10 @@ class AutoDownloadWorker(
         }
 
         fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
-            Log.d(TAG, "Cancelled periodic work")
+            val wm = WorkManager.getInstance(context)
+            wm.cancelUniqueWork(WORK_NAME)
+            wm.cancelUniqueWork(WORK_NAME_IMMEDIATE)
+            Log.d(TAG, "Cancelled all auto-download work")
         }
 
         private fun todayString(): String {

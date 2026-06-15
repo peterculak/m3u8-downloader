@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -19,7 +21,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,7 +62,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
 
                 Spacer(Modifier.height(12.dp))
 
-                // 3-tab bar: Episodes | Downloads | Settings
+                // 4-tab bar: Episodes | Downloads | Prehraj | Settings
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -74,10 +80,17 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     )
                     TabItem(
                         icon = Icons.Outlined.FolderOpen,
-                        label = "Downloads (${state.downloadedFiles.size})",
+                        label = "DL (${state.downloadedFiles.size})",
                         selected = state.selectedTab == Tab.DOWNLOADS,
                         onClick = { viewModel.selectTab(Tab.DOWNLOADS) },
-                        modifier = Modifier.weight(1.3f)
+                        modifier = Modifier.weight(0.9f)
+                    )
+                    TabItem(
+                        icon = Icons.Outlined.Movie,
+                        label = "Prehraj",
+                        selected = state.selectedTab == Tab.PREHRAJ,
+                        onClick = { viewModel.selectTab(Tab.PREHRAJ) },
+                        modifier = Modifier.weight(1f)
                     )
                     TabItem(
                         icon = Icons.Outlined.Settings,
@@ -102,11 +115,23 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onOpen = { openFileWithPlayer(context, it) },
                 modifier = Modifier.padding(innerPadding)
             )
+            Tab.PREHRAJ -> PrehrajTab(
+                state = state,
+                onSearchQueryChange = { viewModel.setPrehrajSearchQuery(it) },
+                onSearch = { viewModel.searchPrehraj() },
+                onExtractUrl = { viewModel.extractPrehrajUrl(it) },
+                onDownload = { movie, url -> viewModel.downloadPrehrajMovie(movie, url) },
+                onCancelDownload = { viewModel.cancelPrehrajDownload(it) },
+                modifier = Modifier.padding(innerPadding)
+            )
             Tab.SETTINGS -> SettingsTab(
                 state = state,
                 onIntervalChange = { viewModel.setSyncInterval(it) },
                 onAutoDownloadToggle = { viewModel.setAutoDownloadEnabled(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
+                onPrehrajEmailChange = { viewModel.setPrehrajEmail(it) },
+                onPrehrajPasswordChange = { viewModel.setPrehrajPassword(it) },
+                onPrehrajLogin = { viewModel.loginPrehraj() },
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -535,6 +560,9 @@ fun SettingsTab(
     onIntervalChange: (Int) -> Unit,
     onAutoDownloadToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
+    onPrehrajEmailChange: (String) -> Unit,
+    onPrehrajPasswordChange: (String) -> Unit,
+    onPrehrajLogin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -644,6 +672,92 @@ fun SettingsTab(
             }
         }
 
+        // Prehraj.to account
+        item {
+            var showPass by remember { mutableStateOf(false) }
+            SettingSection(title = "Prehraj.to Account") {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                    // Email field
+                    OutlinedTextField(
+                        value = state.prehrajEmail,
+                        onValueChange = onPrehrajEmailChange,
+                        label = { Text("Email", fontSize = 13.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                        )
+                    )
+
+                    // Password field
+                    OutlinedTextField(
+                        value = state.prehrajPassword,
+                        onValueChange = onPrehrajPasswordChange,
+                        label = { Text("Password", fontSize = 13.sp) },
+                        singleLine = true,
+                        visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { showPass = !showPass }) {
+                                Icon(
+                                    if (showPass) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                    contentDescription = if (showPass) "Hide" else "Show"
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { onPrehrajLogin() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                        )
+                    )
+
+                    // Login status + button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        when (state.prehrajLoginStatus) {
+                            PrehrajLoginStatus.LOGGED_IN ->
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(Icons.Default.CheckCircle, null,
+                                        tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
+                                    Text("Logged in", color = MaterialTheme.colorScheme.secondary,
+                                        fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            PrehrajLoginStatus.LOGGING_IN ->
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                                    Text("Logging in…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                }
+                            PrehrajLoginStatus.FAILED ->
+                                Text(state.prehrajLoginError ?: "Login failed",
+                                    color = MaterialTheme.colorScheme.error, fontSize = 11.sp,
+                                    modifier = Modifier.weight(1f))
+                            else -> Spacer(Modifier.weight(1f))
+                        }
+                        Button(
+                            onClick = onPrehrajLogin,
+                            enabled = state.prehrajLoginStatus != PrehrajLoginStatus.LOGGING_IN,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Login", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+
         // Info box
         item {
             Card(
@@ -712,6 +826,313 @@ fun ActiveDownloadsBanner(downloads: List<ActiveDownload>, modifier: Modifier = 
                 Text(inProgress.first().title,
                     color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+// ─── Prehraj.to Tab ────────────────────────────────────────────────────────────
+
+@Composable
+fun PrehrajTab(
+    state: UiState,
+    onSearchQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onExtractUrl: (PrehrajMovie) -> Unit,
+    onDownload: (PrehrajMovie, String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
+    Column(modifier = modifier.fillMaxSize()) {
+
+        // Login status banner
+        if (state.prehrajLoginStatus != PrehrajLoginStatus.LOGGED_IN) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (state.prehrajLoginStatus == PrehrajLoginStatus.FAILED)
+                            MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    if (state.prehrajLoginStatus == PrehrajLoginStatus.LOGGING_IN)
+                        Icons.Outlined.HourglassEmpty
+                    else Icons.Outlined.Warning,
+                    null,
+                    tint = if (state.prehrajLoginStatus == PrehrajLoginStatus.FAILED)
+                        MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    when (state.prehrajLoginStatus) {
+                        PrehrajLoginStatus.LOGGING_IN -> "Logging in to prehraj.to…"
+                        PrehrajLoginStatus.FAILED -> state.prehrajLoginError ?: "Login failed — go to Settings"
+                        else -> "Not logged in — add credentials in Settings"
+                    },
+                    fontSize = 12.sp,
+                    color = if (state.prehrajLoginStatus == PrehrajLoginStatus.FAILED)
+                        MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Search bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Search, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                BasicTextField(
+                    value = state.prehrajSearchQuery,
+                    onValueChange = onSearchQueryChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onBackground),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        keyboard?.hide()
+                        onSearch()
+                    }),
+                    decorationBox = { inner ->
+                        if (state.prehrajSearchQuery.isEmpty()) {
+                            Text("Search movies (e.g. Spider Man)…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        }
+                        inner()
+                    }
+                )
+                if (state.prehrajSearchQuery.isNotEmpty()) {
+                    Icon(Icons.Default.Close, "Clear",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp).clickable { onSearchQueryChange("") })
+                }
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable { keyboard?.hide(); onSearch() }
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text("Search", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // Content
+        when {
+            state.prehrajSearching -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Searching prehraj.to…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            state.prehrajSearchError != null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.ErrorOutline, null,
+                            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text(state.prehrajSearchError, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp)
+                    }
+                }
+            }
+            state.prehrajSearchResults.isEmpty() && state.prehrajSearchQuery.isEmpty() -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Outlined.Movie, null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(72.dp))
+                        Spacer(Modifier.height(16.dp))
+                        Text("Search for a movie", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Results from prehraj.to will appear here",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            fontSize = 13.sp)
+                    }
+                }
+            }
+            state.prehrajSearchResults.isEmpty() -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No results found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(state.prehrajSearchResults, key = { it.pageUrl }) { movie ->
+                        val resolvedUrl = state.prehrajResolvedUrls[movie.pageUrl]
+                        PrehrajMovieCard(
+                            movie = movie,
+                            activeDownload = state.activeDownloads[movie.pageUrl],
+                            isDownloaded = state.downloadedFiles.any { it.episodeUrl == movie.pageUrl },
+                            resolvedUrl = resolvedUrl,
+                            onExtractUrl = { onExtractUrl(movie) },
+                            onDownload = { url -> onDownload(movie, url) },
+                            onShare = { url ->
+                                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, movie.title)
+                                    putExtra(android.content.Intent.EXTRA_TEXT, url)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(intent, "Share video URL"))
+                            },
+                            onCancel = { onCancelDownload(movie.pageUrl) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PrehrajMovieCard(
+    movie: PrehrajMovie,
+    activeDownload: ActiveDownload?,
+    isDownloaded: Boolean,
+    resolvedUrl: String?,
+    onExtractUrl: () -> Unit,
+    onDownload: (String) -> Unit,
+    onShare: (String) -> Unit,
+    onCancel: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    if (movie.year.isNotEmpty()) {
+                        Text(movie.year, color = MaterialTheme.colorScheme.primary,
+                            fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                        Spacer(Modifier.height(2.dp))
+                    }
+                    Text(movie.title, color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Outlined.Movie, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.size(24.dp))
+            }
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            Spacer(Modifier.height(10.dp))
+
+            when {
+                activeDownload != null -> {
+                    Column {
+                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                            Text(
+                                when (activeDownload.status) {
+                                    DownloadStatus.RESOLVING -> "Extracting video URL…"
+                                    DownloadStatus.DONE -> "Done!"
+                                    DownloadStatus.FAILED -> "Failed: ${activeDownload.errorMessage}"
+                                    else -> "Downloading ${(activeDownload.progress * 100).toInt()}%"
+                                },
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (activeDownload.status == DownloadStatus.DONE) {
+                                    Icon(Icons.Default.CheckCircle, null,
+                                        tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                                } else if (activeDownload.status == DownloadStatus.DOWNLOADING || activeDownload.status == DownloadStatus.RESOLVING) {
+                                    IconButton(onClick = onCancel, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Close, "Cancel", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = { activeDownload.progress },
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)).height(4.dp),
+                            color = when (activeDownload.status) {
+                                DownloadStatus.FAILED -> MaterialTheme.colorScheme.error
+                                DownloadStatus.DONE -> MaterialTheme.colorScheme.secondary
+                                else -> MaterialTheme.colorScheme.primary
+                            },
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    }
+                }
+                isDownloaded -> {
+                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, null,
+                                tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
+                            Text("Downloaded", color = MaterialTheme.colorScheme.secondary,
+                                fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text("See Downloads →", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                }
+                resolvedUrl != null -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { onShare(resolvedUrl) }, contentPadding = PaddingValues(0.dp)) {
+                            Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Share", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        TextButton(onClick = { onDownload(resolvedUrl) }, contentPadding = PaddingValues(0.dp)) {
+                            Icon(Icons.Outlined.Download, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Download", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
+                else -> {
+                    TextButton(onClick = onExtractUrl, contentPadding = PaddingValues(0.dp)) {
+                        Icon(Icons.Outlined.Link, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Extract URL", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
             }
         }
     }

@@ -37,9 +37,21 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_DOWNLOAD, true)
         set(v) = prefs.edit { putBoolean(KEY_AUTO_DOWNLOAD, v) }
 
+    // ─── Prehraj.to credentials ────────────────────────────────────────────────
+
+    var prehrajEmail: String
+        get() = prefs.getString("prehraj_email", "fr0z3nk0@gmail.com") ?: "fr0z3nk0@gmail.com"
+        set(value) = prefs.edit().putString("prehraj_email", value).apply()
+
+    var prehrajPassword: String
+        get() = prefs.getString("prehraj_password", "hawkon-fybcab-1konQy") ?: "hawkon-fybcab-1konQy"
+        set(value) = prefs.edit().putString("prehraj_password", value).apply()
+
     companion object {
         private const val KEY_INTERVAL_HOURS = "sync_interval_hours"
         private const val KEY_AUTO_DOWNLOAD = "auto_download_enabled"
+        private const val KEY_PREHRAJ_EMAIL = "prehraj_email"
+        private const val KEY_PREHRAJ_PASSWORD = "prehraj_password"
         const val DEFAULT_INTERVAL_HOURS = 1
         val INTERVAL_OPTIONS = listOf(1, 2, 3, 6, 12, 24)
     }
