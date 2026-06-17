@@ -105,6 +105,11 @@ val STVR_SHOWS = listOf(
         name = "komentare-dna",
         displayName = "Komentáre dňa",
         url = "https://www.stvr.sk/televizia/archiv/20116"
+    ),
+    Show(
+        name = "o-5-minut-12",
+        displayName = "O 5 minút 12",
+        url = "https://www.stvr.sk/televizia/archiv/14036"
     )
 )
 
