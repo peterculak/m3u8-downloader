@@ -92,3 +92,14 @@ val TA3_SHOWS = listOf(
         url = "https://www.ta3.com/v-politike"
     )
 )
+
+// ─── STVR Show Definitions ──────────────────────────────────────────────────
+
+val STVR_SHOWS = listOf(
+    Show(
+        name = "odpovede-s-ankou-zitnou",
+        displayName = "Odpovede s Ankou Žitnou",
+        url = "https://www.stvr.sk/televizia/archiv/22386"
+    )
+)
+

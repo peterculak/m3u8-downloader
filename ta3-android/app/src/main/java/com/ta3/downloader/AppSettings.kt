@@ -31,6 +31,9 @@ class AppSettings(context: Context) {
     fun enabledShows(): List<Show> =
         TA3_SHOWS.filter { isShowEnabled(it.name) }
 
+    fun enabledStvrShows(): List<Show> =
+        STVR_SHOWS.filter { isShowEnabled(it.name) }
+
     // ─── First-run flag ─────────────────────────────────────────────────────────
 
     var autoDownloadEnabled: Boolean

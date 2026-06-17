@@ -41,6 +41,11 @@ class DownloadManager(private val context: Context) {
         return File(base, "TA3/$showName").also { it.mkdirs() }
     }
 
+    private fun stvrDownloadDir(showName: String): File {
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return File(base, "STVR/$showName").also { it.mkdirs() }
+    }
+
     private fun prehrajDownloadDir(): File {
         val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         return File(base, "Prehraj").also { it.mkdirs() }
@@ -105,6 +110,10 @@ class DownloadManager(private val context: Context) {
             val ta3Base = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TA3")
             if (ta3Base.exists()) {
                 ta3Base.walkBottomUp().forEach { if (it.isFile) deletePhysicalFile(it.absolutePath) }
+            }
+            val stvrBase = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "STVR")
+            if (stvrBase.exists()) {
+                stvrBase.walkBottomUp().forEach { if (it.isFile) deletePhysicalFile(it.absolutePath) }
             }
             val prehrajBase = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Prehraj")
             if (prehrajBase.exists()) {
@@ -211,13 +220,22 @@ class DownloadManager(private val context: Context) {
     ): DownloadedFile = withContext(Dispatchers.IO) {
         onProgress(0f)
 
+        val isStvr = STVR_SHOWS.any { it.name == episode.showName }
+
         // 1. Resolve the m3u8 URL
-        val m3u8Url = Scraper.resolveM3u8(episode.url)
+        val m3u8Url = if (isStvr) {
+            StvScraper.resolveM3u8(episode.url)
+        } else {
+            Scraper.resolveM3u8(episode.url)
+        }
         onProgress(0.05f)
 
         // 2. Look up the display name for the show (e.g. "Tlačové besedy")
-        val showDisplayName = TA3_SHOWS.find { it.name == episode.showName }?.displayName
-            ?: episode.showName
+        val showDisplayName = if (isStvr) {
+            STVR_SHOWS.find { it.name == episode.showName }?.displayName
+        } else {
+            TA3_SHOWS.find { it.name == episode.showName }?.displayName
+        } ?: episode.showName
 
         // 3. Build output path — we don't need date/time in the filename anymore
         //    because it's properly embedded in the metadata for music apps to sort by.
@@ -227,7 +245,7 @@ class DownloadManager(private val context: Context) {
             .replace(" ", "_")
             .take(80)
         val fileName = "${safeTitle}.m4a"
-        val outFile = File(showDownloadDir(episode.showName), fileName)
+        val outFile = File(if (isStvr) stvrDownloadDir(episode.showName) else showDownloadDir(episode.showName), fileName)
 
         if (outFile.exists()) outFile.delete()
 

@@ -20,6 +20,13 @@ data class UiState(
     val episodeLoadError: String? = null,
     val searchQuery: String = "",
     val selectedTab: Tab = Tab.EPISODES,
+    // STVR
+    val selectedStvrShow: Show = STVR_SHOWS[0],
+    val stvrEpisodes: List<Episode> = emptyList(),
+    val stvrLoadingEpisodes: Boolean = false,
+    val stvrEpisodeLoadError: String? = null,
+    val stvrSearchQuery: String = "",
+    val stvrShowEnabledMap: Map<String, Boolean> = STVR_SHOWS.associate { it.name to true },
     // Settings
     val syncIntervalHours: Int = AppSettings.DEFAULT_INTERVAL_HOURS,
     val autoDownloadEnabled: Boolean = true,
@@ -37,7 +44,7 @@ data class UiState(
     val prehrajResolvedUrls: Map<String, String> = emptyMap()
 )
 
-enum class Tab { EPISODES, DOWNLOADS, SETTINGS, PREHRAJ }
+enum class Tab { EPISODES, STVR, DOWNLOADS, SETTINGS, PREHRAJ }
 
 enum class PrehrajLoginStatus { LOGGED_OUT, LOGGING_IN, LOGGED_IN, FAILED }
 
@@ -53,6 +60,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             autoDownloadEnabled = settings.autoDownloadEnabled,
             wifiOnlyDownload = settings.wifiOnlyDownload,
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
+            stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword
         )
@@ -63,6 +71,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadRegistry()
         observeActiveDownloads()
         fetchEpisodes(TA3_SHOWS[0])
+        fetchStvrEpisodes(STVR_SHOWS[0])
         // Auto-login to prehraj.to on startup if credentials are saved
         if (settings.prehrajEmail.isNotEmpty() && settings.prehrajPassword.isNotEmpty()) {
             loginPrehraj()
@@ -274,6 +283,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val q = _state.value.searchQuery.lowercase()
             return if (q.isEmpty()) _state.value.episodes
             else _state.value.episodes.filter {
+                it.title.lowercase().contains(q) || it.date.contains(q)
+            }
+        }
+
+    // ─── STVR Shows ────────────────────────────────────────────────────────────
+
+    fun selectStvrShow(show: Show) {
+        _state.update { it.copy(selectedStvrShow = show) }
+        fetchStvrEpisodes(show)
+    }
+
+    fun fetchStvrEpisodes(show: Show = _state.value.selectedStvrShow) {
+        viewModelScope.launch {
+            _state.update { it.copy(stvrLoadingEpisodes = true, stvrEpisodeLoadError = null) }
+            try {
+                val episodes = StvScraper.fetchEpisodes(show, maxPages = 5)
+                _state.update { it.copy(stvrEpisodes = episodes, stvrLoadingEpisodes = false) }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        stvrLoadingEpisodes = false,
+                        stvrEpisodeLoadError = "Failed to load STVR episodes: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun startStvrDownload(episode: Episode) {
+        if (_state.value.activeDownloads.containsKey(episode.url)) return
+        DownloadEpisodeWorker.enqueue(getApplication(), episode)
+    }
+
+    fun setStvrSearchQuery(q: String) = _state.update { it.copy(stvrSearchQuery = q) }
+
+    fun setStvrShowEnabled(showName: String, enabled: Boolean) {
+        settings.setShowEnabled(showName, enabled)
+        _state.update { it.copy(stvrShowEnabledMap = it.stvrShowEnabledMap + (showName to enabled)) }
+    }
+
+    val filteredStvrEpisodes: List<Episode>
+        get() {
+            val q = _state.value.stvrSearchQuery.lowercase()
+            return if (q.isEmpty()) _state.value.stvrEpisodes
+            else _state.value.stvrEpisodes.filter {
                 it.title.lowercase().contains(q) || it.date.contains(q)
             }
         }

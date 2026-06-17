@@ -64,10 +64,12 @@ fun DownloaderApp(viewModel: MainViewModel) {
 
                 Spacer(Modifier.height(12.dp))
 
-                // 4-tab bar: Episodes | Downloads | Prehraj | Settings
+                // 5-tab bar: TA3 | STVR | Stiahnuté | Prehraj | Nastavenia
+                // Horizontally scrollable so labels never get cut off
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
                         .clip(RoundedCornerShape(10.dp))
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(3.dp),
@@ -77,29 +79,31 @@ fun DownloaderApp(viewModel: MainViewModel) {
                         icon = Icons.Outlined.PlayCircle,
                         label = "TA3",
                         selected = state.selectedTab == Tab.EPISODES,
-                        onClick = { viewModel.selectTab(Tab.EPISODES) },
-                        modifier = Modifier.weight(1f)
+                        onClick = { viewModel.selectTab(Tab.EPISODES) }
+                    )
+                    TabItem(
+                        icon = Icons.Outlined.Tv,
+                        label = "STVR",
+                        selected = state.selectedTab == Tab.STVR,
+                        onClick = { viewModel.selectTab(Tab.STVR) }
                     )
                     TabItem(
                         icon = Icons.Outlined.FolderOpen,
                         label = "Stiahnuté (${state.downloadedFiles.size})",
                         selected = state.selectedTab == Tab.DOWNLOADS,
-                        onClick = { viewModel.selectTab(Tab.DOWNLOADS) },
-                        modifier = Modifier.weight(0.9f)
+                        onClick = { viewModel.selectTab(Tab.DOWNLOADS) }
                     )
                     TabItem(
                         icon = Icons.Outlined.Movie,
                         label = "Prehraj",
                         selected = state.selectedTab == Tab.PREHRAJ,
-                        onClick = { viewModel.selectTab(Tab.PREHRAJ) },
-                        modifier = Modifier.weight(1f)
+                        onClick = { viewModel.selectTab(Tab.PREHRAJ) }
                     )
                     TabItem(
                         icon = Icons.Outlined.Settings,
                         label = "Nastavenia",
                         selected = state.selectedTab == Tab.SETTINGS,
-                        onClick = { viewModel.selectTab(Tab.SETTINGS) },
-                        modifier = Modifier.weight(1f)
+                        onClick = { viewModel.selectTab(Tab.SETTINGS) }
                     )
                 }
             }
@@ -107,6 +111,11 @@ fun DownloaderApp(viewModel: MainViewModel) {
     ) { innerPadding ->
         when (state.selectedTab) {
             Tab.EPISODES -> EpisodesTab(
+                state = state,
+                viewModel = viewModel,
+                modifier = Modifier.padding(innerPadding)
+            )
+            Tab.STVR -> StvrTab(
                 state = state,
                 viewModel = viewModel,
                 modifier = Modifier.padding(innerPadding)
@@ -133,6 +142,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onAutoDownloadToggle = { viewModel.setAutoDownloadEnabled(it) },
                 onWifiOnlyToggle = { viewModel.setWifiOnly(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
+                onStvrShowToggle = { name, enabled -> viewModel.setStvrShowEnabled(name, enabled) },
                 onPrehrajEmailChange = { viewModel.setPrehrajEmail(it) },
                 onPrehrajPasswordChange = { viewModel.setPrehrajPassword(it) },
                 onPrehrajLogin = { viewModel.loginPrehraj() },
@@ -167,7 +177,7 @@ private fun TabItem(
             .clip(RoundedCornerShape(8.dp))
             .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = 8.dp, horizontal = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -296,6 +306,117 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startDownload(episode) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize()) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            STVR_SHOWS.forEach { show ->
+                val selected = show.name == state.selectedStvrShow.name
+                FilterChip(
+                    selected = selected,
+                    onClick = { viewModel.selectStvrShow(show) },
+                    label = { Text(show.displayName, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = Color.White
+                    )
+                )
+            }
+        }
+
+        // Search bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Search, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                BasicTextField(
+                    value = state.stvrSearchQuery,
+                    onValueChange = viewModel::setStvrSearchQuery,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        if (state.stvrSearchQuery.isEmpty()) {
+                            Text("Hľadať epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        }
+                        inner()
+                    }
+                )
+                if (state.stvrSearchQuery.isNotEmpty()) {
+                    Icon(Icons.Default.Close, "Vymazať",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp).clickable { viewModel.setStvrSearchQuery("") })
+                }
+            }
+        }
+
+        when {
+            state.stvrLoadingEpisodes -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Načítavam epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            state.stvrEpisodeLoadError != null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.ErrorOutline, null,
+                            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text(state.stvrEpisodeLoadError, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { viewModel.fetchStvrEpisodes() }) { Text("Opakovať") }
+                    }
+                }
+            }
+            else -> {
+                val episodes = viewModel.filteredStvrEpisodes
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (episodes.isEmpty()) {
+                        item {
+                            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Žiadne epizódy", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        items(episodes, key = { it.url }) { episode ->
+                            EpisodeCard(
+                                episode = episode,
+                                isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
+                                activeDownload = state.activeDownloads[episode.url],
+                                onDownload = { viewModel.startStvrDownload(episode) }
                             )
                         }
                     }
@@ -606,6 +727,7 @@ fun SettingsTab(
     onAutoDownloadToggle: (Boolean) -> Unit,
     onWifiOnlyToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
+    onStvrShowToggle: (String, Boolean) -> Unit,
     onPrehrajEmailChange: (String) -> Unit,
     onPrehrajPasswordChange: (String) -> Unit,
     onPrehrajLogin: () -> Unit,
@@ -737,6 +859,42 @@ fun SettingsTab(
                             )
                         }
                         if (index < TA3_SHOWS.size - 1) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // STVR Per-show toggles
+        item {
+            SettingSection(title = "STVR relácie na sťahovanie") {
+                Column {
+                    STVR_SHOWS.forEachIndexed { index, show ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(show.displayName, color = MaterialTheme.colorScheme.onBackground,
+                                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(show.url, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Switch(
+                                checked = state.stvrShowEnabledMap[show.name] ?: true,
+                                onCheckedChange = { onStvrShowToggle(show.name, it) },
+                                enabled = state.autoDownloadEnabled,
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                        if (index < STVR_SHOWS.size - 1) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)

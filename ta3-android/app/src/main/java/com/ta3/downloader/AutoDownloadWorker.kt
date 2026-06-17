@@ -154,6 +154,58 @@ class AutoDownloadWorker(
                     Log.e(TAG, "Failed to fetch ${show.displayName}: ${e.message}")
                 }
             }
+
+            val enabledStvrShows = settings.enabledStvrShows()
+            for (show in enabledStvrShows) {
+                try {
+                    Log.d(TAG, "Fetching episodes for STVR show: ${show.displayName}")
+                    val episodes = StvScraper.fetchEpisodes(show, maxPages = 1)
+
+                    // Only download today's episodes
+                    val recent = episodes.filter { it.date == today }
+
+                    for (episode in recent) {
+                        // Skip if already downloaded or currently retrying
+                        if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
+                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            continue
+                        }
+
+                        val job = async {
+                            try {
+                                Log.d(TAG, "Downloading STVR: ${episode.title}")
+                                downloadManager.markPending(episode)
+                                DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
+
+                                downloadManager.download(episode) { progress ->
+                                    DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                                }
+
+                                downloadManager.markComplete(episode.url)
+                                DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
+                                synchronized(downloaded) {
+                                    if (!downloaded.contains(show.displayName)) {
+                                        downloaded.add(show.displayName)
+                                    }
+                                }
+                                Log.d(TAG, "Done STVR: ${episode.title}")
+
+                                kotlinx.coroutines.delay(1500)
+                                DownloadStateTracker.removeDownload(episode.url)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to download STVR ${episode.title}: ${e.message}")
+                                downloadManager.markFailed(episode.url)
+                                DownloadStateTracker.updateError(episode.url, e.message)
+                                kotlinx.coroutines.delay(4000)
+                                DownloadStateTracker.removeDownload(episode.url)
+                            }
+                        }
+                        jobs.add(job)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to fetch STVR ${show.displayName}: ${e.message}")
+                }
+            }
             
             // Wait for all concurrent downloads to finish
             jobs.forEach { it.await() }
