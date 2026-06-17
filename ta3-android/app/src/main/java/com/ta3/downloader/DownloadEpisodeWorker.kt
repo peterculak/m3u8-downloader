@@ -39,6 +39,8 @@ class DownloadEpisodeWorker(
             val episode = Episode(title = title, date = date, url = episodeUrl, showName = showName)
             val directUrl = inputData.getString(KEY_DIRECT_URL)
 
+            downloadManager.markPending(episode, directUrl)
+
             if (directUrl != null) {
                 // Prehraj.to direct MP4 download — skip m3u8 resolution
                 downloadManager.downloadDirectMp4(episode, directUrl) { progress ->
@@ -53,6 +55,7 @@ class DownloadEpisodeWorker(
                 }
             }
 
+            downloadManager.markComplete(episodeUrl)
             DownloadStateTracker.updateProgress(episodeUrl, 1f, DownloadStatus.DONE)
             setProgress(workDataOf(KEY_PROGRESS to 1f, KEY_STATUS to "done"))
             Log.d(TAG, "Download complete: $title")
@@ -64,6 +67,10 @@ class DownloadEpisodeWorker(
             Result.success(workDataOf(KEY_PROGRESS to 1f, KEY_STATUS to "done", KEY_TITLE to title))
         } catch (e: Exception) {
             Log.e(TAG, "Download failed: $title — ${e.message}")
+            downloadManager.markFailed(episodeUrl)
+            // Schedule a WiFi-triggered retry — WorkManager will fire it automatically
+            // when the phone gets a good WiFi connection, even if the app is not running.
+            AutoDownloadWorker.scheduleWifiRetry(applicationContext)
             DownloadStateTracker.updateError(episodeUrl, e.message)
             setProgress(workDataOf(KEY_STATUS to "failed", KEY_ERROR to (e.message ?: "Unknown error"), KEY_TITLE to title))
             

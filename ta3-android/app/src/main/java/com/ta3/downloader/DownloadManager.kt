@@ -29,6 +29,9 @@ class DownloadManager(private val context: Context) {
     private val registryFile: File
         get() = File(context.filesDir, "downloads_registry.json")
 
+    private val pendingRegistryFile: File
+        get() = File(context.filesDir, "pending_downloads.json")
+
     /**
      * Public Downloads folder:  /sdcard/Download/TA3/<showName>/
      * Visible to any file manager or media app on the device.
@@ -96,6 +99,7 @@ class DownloadManager(private val context: Context) {
             val registry = loadRegistryInternal()
             registry.forEach { deletePhysicalFile(it.localPath) }
             saveRegistryInternal(emptyList())
+            savePendingDownloadsInternal(emptyList())
 
             // Also aggressively clean up the physical directories in case of orphaned files
             val ta3Base = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TA3")
@@ -127,6 +131,71 @@ class DownloadManager(private val context: Context) {
                 context.contentResolver.delete(uri, selection, selectionArgs)
             } catch (_: Exception) {}
         }
+    }
+
+    // ─── Pending Downloads ─────────────────────────────────────────────────────
+
+    suspend fun loadPendingDownloads(): List<PendingDownload> = withContext(Dispatchers.IO) {
+        registryMutex.withLock {
+            loadPendingDownloadsInternal()
+        }
+    }
+
+    private fun loadPendingDownloadsInternal(): List<PendingDownload> {
+        try {
+            if (!pendingRegistryFile.exists()) return emptyList()
+            val type = object : TypeToken<List<PendingDownload>>() {}.type
+            return gson.fromJson(pendingRegistryFile.readText(), type) ?: emptyList()
+        } catch (e: Exception) {
+            return emptyList()
+        }
+    }
+
+    private fun savePendingDownloadsInternal(list: List<PendingDownload>) {
+        pendingRegistryFile.writeText(gson.toJson(list))
+    }
+
+    suspend fun markPending(episode: Episode, directUrl: String? = null) = withContext(Dispatchers.IO) {
+        registryMutex.withLock {
+            val list = loadPendingDownloadsInternal().toMutableList()
+            val existing = list.find { it.episodeUrl == episode.url }
+            if (existing != null) {
+                list.remove(existing)
+                list.add(existing.copy(
+                    attemptCount = existing.attemptCount + 1,
+                    directUrl = directUrl ?: existing.directUrl
+                ))
+            } else {
+                list.add(PendingDownload(
+                    episodeUrl = episode.url,
+                    title = episode.title,
+                    date = episode.date,
+                    time = episode.time,
+                    showName = episode.showName,
+                    directUrl = directUrl,
+                    attemptCount = 1
+                ))
+            }
+            savePendingDownloadsInternal(list)
+        }
+    }
+
+    suspend fun clearPending(episodeUrl: String) = withContext(Dispatchers.IO) {
+        registryMutex.withLock {
+            val list = loadPendingDownloadsInternal().toMutableList()
+            val existing = list.find { it.episodeUrl == episodeUrl }
+            if (existing != null) {
+                list.remove(existing)
+                savePendingDownloadsInternal(list)
+            }
+        }
+    }
+
+    suspend fun markComplete(episodeUrl: String) = clearPending(episodeUrl)
+    
+    suspend fun markFailed(episodeUrl: String) {
+        // No-op. attemptCount is incremented in markPending when the attempt begins,
+        // ensuring it gets counted even if the process crashes during download.
     }
 
     // ─── Downloading ───────────────────────────────────────────────────────────

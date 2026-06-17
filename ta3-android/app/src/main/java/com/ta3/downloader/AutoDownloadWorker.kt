@@ -52,34 +52,88 @@ class AutoDownloadWorker(
         kotlinx.coroutines.coroutineScope {
             val jobs = mutableListOf<kotlinx.coroutines.Deferred<Unit>>()
 
+            // --- Retry pending downloads ---
+            val today = todayString()
+            val pending = downloadManager.loadPendingDownloads()
+            val pendingUrls = pending.map { it.episodeUrl }.toSet()
+            for (p in pending) {
+                // Stop retrying if the episode is no longer from today
+                if (p.date != today) {
+                    Log.w(TAG, "Dropping stale pending download (not today): ${p.title}")
+                    downloadManager.clearPending(p.episodeUrl)
+                    continue
+                }
+                
+                val job = async {
+                    val episode = Episode(title=p.title, date=p.date, time=p.time, url=p.episodeUrl, showName=p.showName)
+                    try {
+                        Log.d(TAG, "Retrying pending download: ${episode.title} (Attempt ${p.attemptCount + 1})")
+                        downloadManager.markPending(episode, p.directUrl)
+                        DownloadStateTracker.addDownload(episode.url, episode.title, episode.showName)
+                        
+                        if (p.directUrl != null) {
+                            downloadManager.downloadDirectMp4(episode, p.directUrl) { progress ->
+                                DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                            }
+                        } else {
+                            downloadManager.download(episode) { progress ->
+                                DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                            }
+                        }
+                        
+                        downloadManager.markComplete(episode.url)
+                        DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
+                        synchronized(downloaded) {
+                            if (!downloaded.contains(episode.showName)) {
+                                downloaded.add(episode.showName)
+                            }
+                        }
+                        Log.d(TAG, "Done retrying: ${episode.title}")
+                        
+                        kotlinx.coroutines.delay(1500)
+                        DownloadStateTracker.removeDownload(episode.url)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to retry download ${episode.title}: ${e.message}")
+                        downloadManager.markFailed(episode.url)
+                        DownloadStateTracker.updateError(episode.url, e.message)
+                        kotlinx.coroutines.delay(4000)
+                        DownloadStateTracker.removeDownload(episode.url)
+                    }
+                }
+                jobs.add(job)
+            }
+
             for (show in enabledShows) {
                 try {
                     Log.d(TAG, "Fetching episodes for ${show.displayName}")
                     val episodes = Scraper.fetchEpisodes(show)
 
                     // Only download today's episodes
-                    val today = todayString()
                     val recent = episodes.filter { it.date == today }
 
                     for (episode in recent) {
-                        // Skip if already downloaded
-                        if (downloadManager.isDownloaded(episode.url)) {
-                            Log.d(TAG, "Already downloaded: ${episode.title}")
+                        // Skip if already downloaded or currently retrying
+                        if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
+                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
                             continue
                         }
 
                         val job = async {
                             try {
                                 Log.d(TAG, "Downloading: ${episode.title}")
+                                downloadManager.markPending(episode)
                                 DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
                                 
                                 downloadManager.download(episode) { progress ->
                                     DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
                                 }
                                 
+                                downloadManager.markComplete(episode.url)
                                 DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
                                 synchronized(downloaded) {
-                                    downloaded.add(show.displayName)
+                                    if (!downloaded.contains(show.displayName)) {
+                                        downloaded.add(show.displayName)
+                                    }
                                 }
                                 Log.d(TAG, "Done: ${episode.title}")
                                 
@@ -87,6 +141,7 @@ class AutoDownloadWorker(
                                 DownloadStateTracker.removeDownload(episode.url)
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to download ${episode.title}: ${e.message}")
+                                downloadManager.markFailed(episode.url)
                                 DownloadStateTracker.updateError(episode.url, e.message)
                                 kotlinx.coroutines.delay(4000)
                                 DownloadStateTracker.removeDownload(episode.url)
@@ -104,6 +159,15 @@ class AutoDownloadWorker(
             jobs.forEach { it.await() }
         }
 
+        // If any of today's episodes are still pending (failed this run), schedule a
+        // WiFi-triggered retry. WorkManager will fire it automatically when WiFi reconnects,
+        // even if the app is not running.
+        val stillPending = downloadManager.loadPendingDownloads().any { it.date == todayString() }
+        if (stillPending) {
+            Log.d(TAG, "Some downloads still pending — scheduling WiFi retry")
+            scheduleWifiRetry(applicationContext)
+        }
+
         if (downloaded.isNotEmpty()) {
             NotificationHelper.notifyDownloadsComplete(applicationContext, downloaded.size, downloaded)
         }
@@ -116,6 +180,31 @@ class AutoDownloadWorker(
         private const val TAG = "AutoDownloadWorker"
         const val WORK_NAME = "ta3_auto_download"
         const val WORK_NAME_IMMEDIATE = "ta3_auto_download_immediate"
+        const val WORK_NAME_RETRY = "ta3_retry_pending"
+
+        /**
+         * Schedule a one-time retry that fires automatically when WiFi reconnects.
+         * Uses KEEP policy — if a retry is already queued, leave it alone.
+         * Has a 5-minute initial delay to avoid hammering a flaky connection.
+         */
+        fun scheduleWifiRetry(context: Context) {
+            val wifiOnly = AppSettings(context).wifiOnlyDownload
+            val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
+            val request = OneTimeWorkRequestBuilder<AutoDownloadWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(networkType)
+                        .build()
+                )
+                .setInitialDelay(5, TimeUnit.MINUTES)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                WORK_NAME_RETRY,
+                ExistingWorkPolicy.KEEP, // Don't reset delay if one is already queued
+                request
+            )
+            Log.d(TAG, "WiFi retry scheduled (fires 5 min after WiFi reconnects), wifiOnly=$wifiOnly")
+        }
 
         /**
          * Schedule (or reschedule) the periodic worker.
@@ -169,6 +258,7 @@ class AutoDownloadWorker(
             val wm = WorkManager.getInstance(context)
             wm.cancelUniqueWork(WORK_NAME)
             wm.cancelUniqueWork(WORK_NAME_IMMEDIATE)
+            wm.cancelUniqueWork(WORK_NAME_RETRY)
             Log.d(TAG, "Cancelled all auto-download work")
         }
 

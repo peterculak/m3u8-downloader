@@ -26,6 +26,17 @@ data class DownloadedFile(
     val downloadedAt: Long = System.currentTimeMillis()
 )
 
+data class PendingDownload(
+    val episodeUrl: String,
+    val title: String,
+    val date: String,
+    val time: String = "",
+    val showName: String,
+    val directUrl: String? = null,
+    val enqueuedAt: Long = System.currentTimeMillis(),
+    val attemptCount: Int = 0
+)
+
 enum class DownloadStatus {
     IDLE,
     RESOLVING,
