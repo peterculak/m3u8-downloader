@@ -100,6 +100,11 @@ val STVR_SHOWS = listOf(
         name = "odpovede-s-ankou-zitnou",
         displayName = "Odpovede s Ankou Žitnou",
         url = "https://www.stvr.sk/televizia/archiv/22386"
+    ),
+    Show(
+        name = "komentare-dna",
+        displayName = "Komentáre dňa",
+        url = "https://www.stvr.sk/televizia/archiv/20116"
     )
 )
 
