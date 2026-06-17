@@ -35,6 +35,11 @@ class AutoDownloadWorker(
             // Ignore if foreground service fails
         }
 
+        // Honour the master auto-download toggle
+        if (!settings.autoDownloadEnabled) {
+            Log.d(TAG, "Auto-download disabled — skipping")
+            return Result.success()
+        }
 
         val enabledShows = settings.enabledShows()
         if (enabledShows.isEmpty()) {
@@ -52,7 +57,7 @@ class AutoDownloadWorker(
                     Log.d(TAG, "Fetching episodes for ${show.displayName}")
                     val episodes = Scraper.fetchEpisodes(show)
 
-                    // Only consider today's episodes
+                    // Only download today's episodes
                     val today = todayString()
                     val recent = episodes.filter { it.date == today }
 
@@ -117,12 +122,14 @@ class AutoDownloadWorker(
          * Calling this replaces any existing scheduled work so interval changes take effect immediately.
          */
         fun schedule(context: Context, intervalHours: Int = AppSettings.DEFAULT_INTERVAL_HOURS) {
+            val wifiOnly = AppSettings(context).wifiOnlyDownload
+            val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
             val request = PeriodicWorkRequestBuilder<AutoDownloadWorker>(
                 intervalHours.toLong(), TimeUnit.HOURS
             )
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.UNMETERED)
+                        .setRequiredNetworkType(networkType)
                         .build()
                 )
                 .build()
@@ -132,7 +139,7 @@ class AutoDownloadWorker(
                 ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
-            Log.d(TAG, "Scheduled periodic work every $intervalHours hour(s)")
+            Log.d(TAG, "Scheduled periodic work every $intervalHours hour(s), wifiOnly=$wifiOnly")
         }
 
         /**
@@ -140,20 +147,22 @@ class AutoDownloadWorker(
          * Uses KEEP policy so if it's already running from a previous open, it won't restart.
          */
         fun runNow(context: Context) {
+            val wifiOnly = AppSettings(context).wifiOnlyDownload
+            val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
             val request = OneTimeWorkRequestBuilder<AutoDownloadWorker>()
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.UNMETERED)
+                        .setRequiredNetworkType(networkType)
                         .build()
                 )
                 .build()
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME_IMMEDIATE,
-                ExistingWorkPolicy.KEEP, // don't restart if already running
+                ExistingWorkPolicy.REPLACE, // always re-run so new episodes are caught on every app open
                 request
             )
-            Log.d(TAG, "Enqueued immediate download check")
+            Log.d(TAG, "Enqueued immediate download check, wifiOnly=$wifiOnly")
         }
 
         fun cancel(context: Context) {
@@ -165,16 +174,6 @@ class AutoDownloadWorker(
 
         private fun todayString(): String {
             val cal = java.util.Calendar.getInstance()
-            return "%04d-%02d-%02d".format(
-                cal.get(java.util.Calendar.YEAR),
-                cal.get(java.util.Calendar.MONTH) + 1,
-                cal.get(java.util.Calendar.DAY_OF_MONTH)
-            )
-        }
-
-        private fun yesterdayString(): String {
-            val cal = java.util.Calendar.getInstance()
-            cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
             return "%04d-%02d-%02d".format(
                 cal.get(java.util.Calendar.YEAR),
                 cal.get(java.util.Calendar.MONTH) + 1,

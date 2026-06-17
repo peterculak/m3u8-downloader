@@ -2,6 +2,8 @@ package com.ta3.downloader.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,7 +56,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     )
                 )
                 Text(
-                    text = "Slovak TV archive",
+                    text = "Slovenský TV archív",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -73,14 +75,14 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 ) {
                     TabItem(
                         icon = Icons.Outlined.PlayCircle,
-                        label = "Episodes",
+                        label = "TA3",
                         selected = state.selectedTab == Tab.EPISODES,
                         onClick = { viewModel.selectTab(Tab.EPISODES) },
                         modifier = Modifier.weight(1f)
                     )
                     TabItem(
                         icon = Icons.Outlined.FolderOpen,
-                        label = "DL (${state.downloadedFiles.size})",
+                        label = "Stiahnuté (${state.downloadedFiles.size})",
                         selected = state.selectedTab == Tab.DOWNLOADS,
                         onClick = { viewModel.selectTab(Tab.DOWNLOADS) },
                         modifier = Modifier.weight(0.9f)
@@ -94,7 +96,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     )
                     TabItem(
                         icon = Icons.Outlined.Settings,
-                        label = "Settings",
+                        label = "Nastavenia",
                         selected = state.selectedTab == Tab.SETTINGS,
                         onClick = { viewModel.selectTab(Tab.SETTINGS) },
                         modifier = Modifier.weight(1f)
@@ -113,6 +115,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 state = state,
                 onDelete = { viewModel.deleteDownload(it.episodeUrl) },
                 onOpen = { openFileWithPlayer(context, it) },
+                onClearAll = { viewModel.clearAllDownloads() },
                 modifier = Modifier.padding(innerPadding)
             )
             Tab.PREHRAJ -> PrehrajTab(
@@ -128,6 +131,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 state = state,
                 onIntervalChange = { viewModel.setSyncInterval(it) },
                 onAutoDownloadToggle = { viewModel.setAutoDownloadEnabled(it) },
+                onWifiOnlyToggle = { viewModel.setWifiOnly(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
                 onPrehrajEmailChange = { viewModel.setPrehrajEmail(it) },
                 onPrehrajPasswordChange = { viewModel.setPrehrajPassword(it) },
@@ -197,6 +201,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -236,13 +241,13 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                     modifier = Modifier.weight(1f),
                     decorationBox = { inner ->
                         if (state.searchQuery.isEmpty()) {
-                            Text("Search episodes...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                            Text("Hľadať epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                         }
                         inner()
                     }
                 )
                 if (state.searchQuery.isNotEmpty()) {
-                    Icon(Icons.Default.Close, "Clear",
+                    Icon(Icons.Default.Close, "Vymazať",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp).clickable { viewModel.setSearchQuery("") })
                 }
@@ -255,7 +260,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(12.dp))
-                        Text("Fetching episodes...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Načítavam epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -267,7 +272,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                         Spacer(Modifier.height(12.dp))
                         Text(state.episodeLoadError, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                         Spacer(Modifier.height(12.dp))
-                        Button(onClick = { viewModel.fetchEpisodes() }) { Text("Retry") }
+                        Button(onClick = { viewModel.fetchEpisodes() }) { Text("Opakovať") }
                     }
                 }
             }
@@ -281,7 +286,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                     if (episodes.isEmpty()) {
                         item {
                             Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                                Text("No episodes found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Žiadne epizódy", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     } else {
@@ -333,10 +338,10 @@ fun EpisodeCard(
                         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                             Text(
                                 when (activeDownload.status) {
-                                    DownloadStatus.RESOLVING -> "Resolving stream..."
-                                    DownloadStatus.DONE -> "Done!"
-                                    DownloadStatus.FAILED -> "Failed"
-                                    else -> "Downloading ${(activeDownload.progress * 100).toInt()}%"
+                                    DownloadStatus.RESOLVING -> "Spracúvam stream..."
+                                    DownloadStatus.DONE -> "Hotovo!"
+                                    DownloadStatus.FAILED -> "Zlyhalo"
+                                    else -> "Sťahujem ${(activeDownload.progress * 100).toInt()}%"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium
                             )
@@ -368,16 +373,16 @@ fun EpisodeCard(
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
-                            Text("Downloaded", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Stiahnuté", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                        Text("See Downloads →", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Text("Pozrieť stiahnuté →", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     }
                 }
                 else -> {
                     TextButton(onClick = onDownload, contentPadding = PaddingValues(0.dp)) {
                         Icon(Icons.Outlined.Download, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Download", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Stiahnuť", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -392,17 +397,34 @@ fun DownloadsTab(
     state: UiState,
     onDelete: (DownloadedFile) -> Unit,
     onOpen: (DownloadedFile) -> Unit,
+    onClearAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showClearConfirm by remember { mutableStateOf(false) }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("Vymazať všetky stiahnuté") },
+            text = { Text("Vymazať všetkých ${state.downloadedFiles.size} stiahnutých súborov zo zariadenia? Táto akcia je nevratná.") },
+            confirmButton = {
+                TextButton(onClick = { onClearAll(); showClearConfirm = false }) {
+                    Text("Vymazať všetko", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("Zrušiť") } }
+        )
+    }
+
     if (state.downloadedFiles.isEmpty() && state.activeDownloads.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Outlined.FolderOpen, null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(64.dp))
                 Spacer(Modifier.height(16.dp))
-                Text("No downloads yet", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text("Zatiaľ žiadne stiahnuté", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Text("Episodes will appear here after background sync",
+                Text("Epizódy sa tu objavia po synchronizácii na pozadí",
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 13.sp)
             }
         }
@@ -416,7 +438,7 @@ fun DownloadsTab(
     ) {
         if (state.activeDownloads.isNotEmpty()) {
             item {
-                Text("IN PROGRESS", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text("PREBIEHA", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
                     modifier = Modifier.padding(bottom = 4.dp))
             }
@@ -428,9 +450,32 @@ fun DownloadsTab(
 
         if (state.downloadedFiles.isNotEmpty()) {
             item {
-                Text("COMPLETED", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("DOKONČENÉ", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    TextButton(
+                        onClick = { showClearConfirm = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "Vymazať všetko",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Vymazať všetko",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
             items(state.downloadedFiles, key = { it.episodeUrl }) { file ->
                 DownloadedFileCard(file = file, onOpen = onOpen, onDelete = onDelete)
@@ -457,10 +502,10 @@ fun ActiveDownloadCard(download: ActiveDownload) {
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                 Text(
                     when (download.status) {
-                        DownloadStatus.RESOLVING -> "Resolving stream..."
-                        DownloadStatus.DONE -> "Complete"
-                        DownloadStatus.FAILED -> "Failed: ${download.errorMessage}"
-                        else -> "${(download.progress * 100).toInt()}% downloaded"
+                        DownloadStatus.RESOLVING -> "Spracúvam stream..."
+                        DownloadStatus.DONE -> "Dokončené"
+                        DownloadStatus.FAILED -> "Zlyhalo: ${download.errorMessage}"
+                        else -> "${(download.progress * 100).toInt()}% stiahnuté"
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
                 )
@@ -494,14 +539,14 @@ fun DownloadedFileCard(
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-            title = { Text("Delete Episode") },
-            text = { Text("Delete \"${file.title}\" from your device?") },
+            title = { Text("Vymazať epizódu") },
+            text = { Text("Vymazať \"${file.title}\" zo zariadenia?") },
             confirmButton = {
                 TextButton(onClick = { onDelete(file); showConfirm = false }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("Vymazať", color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { showConfirm = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { showConfirm = false }) { Text("Zrušiť") } }
         )
     }
 
@@ -537,7 +582,7 @@ fun DownloadedFileCard(
                 ) {
                     Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Open", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Otvoriť", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
                 OutlinedButton(
                     onClick = { showConfirm = true },
@@ -559,6 +604,7 @@ fun SettingsTab(
     state: UiState,
     onIntervalChange: (Int) -> Unit,
     onAutoDownloadToggle: (Boolean) -> Unit,
+    onWifiOnlyToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
     onPrehrajEmailChange: (String) -> Unit,
     onPrehrajPasswordChange: (String) -> Unit,
@@ -572,32 +618,61 @@ fun SettingsTab(
     ) {
         // Auto-download master toggle
         item {
-            SettingSection(title = "Background Sync") {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Auto-download", color = MaterialTheme.colorScheme.onBackground,
-                            fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Text("Automatically download new episodes in background",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            SettingSection(title = "Synchronizácia na pozadí") {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Automatické sťahovanie", color = MaterialTheme.colorScheme.onBackground,
+                                fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("Automaticky sťahovať nové epizódy na pozadí",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = state.autoDownloadEnabled,
+                            onCheckedChange = onAutoDownloadToggle,
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                        )
                     }
-                    Switch(
-                        checked = state.autoDownloadEnabled,
-                        onCheckedChange = onAutoDownloadToggle,
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                     )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Iba cez Wi-Fi", color = MaterialTheme.colorScheme.onBackground,
+                                fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(
+                                if (state.wifiOnlyDownload)
+                                    "Sťahovať iba pri pripojení na Wi-Fi"
+                                else
+                                    "Sťahovať cez Wi-Fi aj mobilné dáta (5G/4G)",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = state.wifiOnlyDownload,
+                            onCheckedChange = onWifiOnlyToggle,
+                            enabled = state.autoDownloadEnabled,
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                        )
+                    }
                 }
             }
         }
 
         // Sync interval selector
         item {
-            SettingSection(title = "Check Interval") {
+            SettingSection(title = "Interval kontroly") {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text("Check every N hours", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("Kontrolovať každých N hodín", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Spacer(Modifier.height(10.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -626,7 +701,7 @@ fun SettingsTab(
                     if (state.autoDownloadEnabled) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Currently set to every ${state.syncIntervalHours} hour${if (state.syncIntervalHours == 1) "" else "s"}",
+                            "Aktuálne nastavené na každú ${state.syncIntervalHours}. hodinu",
                             color = MaterialTheme.colorScheme.primary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -638,7 +713,7 @@ fun SettingsTab(
 
         // Per-show toggles
         item {
-            SettingSection(title = "Shows to Download") {
+            SettingSection(title = "Relácie na sťahovanie") {
                 Column {
                     TA3_SHOWS.forEachIndexed { index, show ->
                         Row(
@@ -675,7 +750,7 @@ fun SettingsTab(
         // Prehraj.to account
         item {
             var showPass by remember { mutableStateOf(false) }
-            SettingSection(title = "Prehraj.to Account") {
+            SettingSection(title = "Prehraj.to Účet") {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
 
@@ -683,7 +758,7 @@ fun SettingsTab(
                     OutlinedTextField(
                         value = state.prehrajEmail,
                         onValueChange = onPrehrajEmailChange,
-                        label = { Text("Email", fontSize = 13.sp) },
+                        label = { Text("E-mail", fontSize = 13.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
@@ -697,14 +772,14 @@ fun SettingsTab(
                     OutlinedTextField(
                         value = state.prehrajPassword,
                         onValueChange = onPrehrajPasswordChange,
-                        label = { Text("Password", fontSize = 13.sp) },
+                        label = { Text("Heslo", fontSize = 13.sp) },
                         singleLine = true,
                         visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
                         trailingIcon = {
                             IconButton(onClick = { showPass = !showPass }) {
                                 Icon(
                                     if (showPass) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = if (showPass) "Hide" else "Show"
+                                    contentDescription = if (showPass) "Skryť" else "Zobraziť"
                                 )
                             }
                         },
@@ -729,7 +804,7 @@ fun SettingsTab(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Icon(Icons.Default.CheckCircle, null,
                                         tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
-                                    Text("Logged in", color = MaterialTheme.colorScheme.secondary,
+                                    Text("Prihlásený", color = MaterialTheme.colorScheme.secondary,
                                         fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             PrehrajLoginStatus.LOGGING_IN ->
@@ -737,10 +812,10 @@ fun SettingsTab(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     CircularProgressIndicator(modifier = Modifier.size(14.dp),
                                         strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-                                    Text("Logging in…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                    Text("Prihlasujem…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                                 }
                             PrehrajLoginStatus.FAILED ->
-                                Text(state.prehrajLoginError ?: "Login failed",
+                                Text(state.prehrajLoginError ?: "Prihlásenie zlyhalo",
                                     color = MaterialTheme.colorScheme.error, fontSize = 11.sp,
                                     modifier = Modifier.weight(1f))
                             else -> Spacer(Modifier.weight(1f))
@@ -751,7 +826,7 @@ fun SettingsTab(
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
-                            Text("Login", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Prihlásiť sa", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -768,8 +843,8 @@ fun SettingsTab(
                 Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Text(
-                        "Background sync checks for today's and yesterday's episodes. " +
-                        "Downloaded files can be opened with VLC, MX Player, or any media app.",
+                        "Synchronizácia na pozadí kontroluje dnešné a včerajšie epizódy. " +
+                        "Stiahnuté súbory je možné otvoriť pomocou VLC, MX Player alebo inej mediálnej aplikácie.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         lineHeight = 18.sp
@@ -821,7 +896,7 @@ fun ActiveDownloadsBanner(downloads: List<ActiveDownload>, modifier: Modifier = 
         ) {
             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.5.dp)
             Column(modifier = Modifier.weight(1f)) {
-                Text("${inProgress.size} download${if (inProgress.size > 1) "s" else ""} in progress",
+                Text("${inProgress.size} stiahnutí prebieha",
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(inProgress.first().title,
                     color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp,
@@ -875,9 +950,9 @@ fun PrehrajTab(
                 )
                 Text(
                     when (state.prehrajLoginStatus) {
-                        PrehrajLoginStatus.LOGGING_IN -> "Logging in to prehraj.to…"
-                        PrehrajLoginStatus.FAILED -> state.prehrajLoginError ?: "Login failed — go to Settings"
-                        else -> "Not logged in — add credentials in Settings"
+                        PrehrajLoginStatus.LOGGING_IN -> "Prihlasujem na prehraj.to…"
+                        PrehrajLoginStatus.FAILED -> state.prehrajLoginError ?: "Prihlásenie zlyhalo — prejdite do Nastavení"
+                        else -> "Neprihlásený — pridajte údaje v Nastaveniach"
                     },
                     fontSize = 12.sp,
                     color = if (state.prehrajLoginStatus == PrehrajLoginStatus.FAILED)
@@ -915,14 +990,14 @@ fun PrehrajTab(
                     }),
                     decorationBox = { inner ->
                         if (state.prehrajSearchQuery.isEmpty()) {
-                            Text("Search movies (e.g. Spider Man)…",
+                            Text("Hľadať filmy (napr. Spider Man)…",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                         }
                         inner()
                     }
                 )
                 if (state.prehrajSearchQuery.isNotEmpty()) {
-                    Icon(Icons.Default.Close, "Clear",
+                    Icon(Icons.Default.Close, "Vymazať",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp).clickable { onSearchQueryChange("") })
                 }
@@ -934,7 +1009,7 @@ fun PrehrajTab(
                         .clickable { keyboard?.hide(); onSearch() }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text("Search", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Hľadať", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -946,7 +1021,7 @@ fun PrehrajTab(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(12.dp))
-                        Text("Searching prehraj.to…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Prehľadávam prehraj.to…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -968,9 +1043,9 @@ fun PrehrajTab(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier = Modifier.size(72.dp))
                         Spacer(Modifier.height(16.dp))
-                        Text("Search for a movie", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text("Vyhľadať film", color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Results from prehraj.to will appear here",
+                        Text("Tu sa zobrazia výsledky z prehraj.to",
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             fontSize = 13.sp)
                     }
@@ -978,7 +1053,7 @@ fun PrehrajTab(
             }
             state.prehrajSearchResults.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No results found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Žiadne výsledky", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             else -> {
@@ -1002,7 +1077,7 @@ fun PrehrajTab(
                                     putExtra(android.content.Intent.EXTRA_SUBJECT, movie.title)
                                     putExtra(android.content.Intent.EXTRA_TEXT, url)
                                 }
-                                context.startActivity(android.content.Intent.createChooser(intent, "Share video URL"))
+                                context.startActivity(android.content.Intent.createChooser(intent, "Zdieľať URL videa"))
                             },
                             onCancel = { onCancelDownload(movie.pageUrl) }
                         )
@@ -1058,10 +1133,10 @@ fun PrehrajMovieCard(
                         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                             Text(
                                 when (activeDownload.status) {
-                                    DownloadStatus.RESOLVING -> "Extracting video URL…"
-                                    DownloadStatus.DONE -> "Done!"
-                                    DownloadStatus.FAILED -> "Failed: ${activeDownload.errorMessage}"
-                                    else -> "Downloading ${(activeDownload.progress * 100).toInt()}%"
+                                    DownloadStatus.RESOLVING -> "Získavam URL videa…"
+                                    DownloadStatus.DONE -> "Hotovo!"
+                                    DownloadStatus.FAILED -> "Zlyhalo: ${activeDownload.errorMessage}"
+                                    else -> "Sťahujem ${(activeDownload.progress * 100).toInt()}%"
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp, fontWeight = FontWeight.Medium
@@ -1072,7 +1147,7 @@ fun PrehrajMovieCard(
                                         tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
                                 } else if (activeDownload.status == DownloadStatus.DOWNLOADING || activeDownload.status == DownloadStatus.RESOLVING) {
                                     IconButton(onClick = onCancel, modifier = Modifier.size(24.dp)) {
-                                        Icon(Icons.Default.Close, "Cancel", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Icon(Icons.Default.Close, "Zrušiť", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -1102,10 +1177,10 @@ fun PrehrajMovieCard(
                         ) {
                             Icon(Icons.Default.CheckCircle, null,
                                 tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
-                            Text("Downloaded", color = MaterialTheme.colorScheme.secondary,
+                            Text("Stiahnuté", color = MaterialTheme.colorScheme.secondary,
                                 fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                        Text("See Downloads →", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        Text("Pozrieť stiahnuté →", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     }
                 }
                 resolvedUrl != null -> {
@@ -1116,13 +1191,13 @@ fun PrehrajMovieCard(
                         TextButton(onClick = { onShare(resolvedUrl) }, contentPadding = PaddingValues(0.dp)) {
                             Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Share", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Zdieľať", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Spacer(Modifier.width(16.dp))
                         TextButton(onClick = { onDownload(resolvedUrl) }, contentPadding = PaddingValues(0.dp)) {
                             Icon(Icons.Outlined.Download, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Download", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Stiahnuť", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -1130,7 +1205,7 @@ fun PrehrajMovieCard(
                     TextButton(onClick = onExtractUrl, contentPadding = PaddingValues(0.dp)) {
                         Icon(Icons.Outlined.Link, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Extract URL", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Získať URL", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }

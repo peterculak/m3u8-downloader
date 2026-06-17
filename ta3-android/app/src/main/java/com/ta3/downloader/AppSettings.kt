@@ -37,6 +37,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_DOWNLOAD, true)
         set(v) = prefs.edit { putBoolean(KEY_AUTO_DOWNLOAD, v) }
 
+    /** If true, background downloads only run on Wi-Fi (UNMETERED). Default: true. */
+    var wifiOnlyDownload: Boolean
+        get() = prefs.getBoolean(KEY_WIFI_ONLY, true)
+        set(v) = prefs.edit { putBoolean(KEY_WIFI_ONLY, v) }
+
     // ─── Prehraj.to credentials ────────────────────────────────────────────────
 
     var prehrajEmail: String
@@ -50,6 +55,7 @@ class AppSettings(context: Context) {
     companion object {
         private const val KEY_INTERVAL_HOURS = "sync_interval_hours"
         private const val KEY_AUTO_DOWNLOAD = "auto_download_enabled"
+        private const val KEY_WIFI_ONLY = "wifi_only_download"
         private const val KEY_PREHRAJ_EMAIL = "prehraj_email"
         private const val KEY_PREHRAJ_PASSWORD = "prehraj_password"
         const val DEFAULT_INTERVAL_HOURS = 1

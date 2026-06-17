@@ -84,9 +84,48 @@ class DownloadManager(private val context: Context) {
         registryMutex.withLock {
             val registry = loadRegistryInternal().toMutableList()
             val entry = registry.find { it.episodeUrl == episodeUrl } ?: return@withLock
-            File(entry.localPath).delete()
+            deletePhysicalFile(entry.localPath)
             registry.remove(entry)
             saveRegistryInternal(registry)
+        }
+    }
+
+    /** Delete every downloaded file and clear the registry. Useful for testing. */
+    suspend fun clearAllDownloads() = withContext(Dispatchers.IO) {
+        registryMutex.withLock {
+            val registry = loadRegistryInternal()
+            registry.forEach { deletePhysicalFile(it.localPath) }
+            saveRegistryInternal(emptyList())
+
+            // Also aggressively clean up the physical directories in case of orphaned files
+            val ta3Base = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TA3")
+            if (ta3Base.exists()) {
+                ta3Base.walkBottomUp().forEach { if (it.isFile) deletePhysicalFile(it.absolutePath) }
+            }
+            val prehrajBase = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Prehraj")
+            if (prehrajBase.exists()) {
+                prehrajBase.walkBottomUp().forEach { if (it.isFile) deletePhysicalFile(it.absolutePath) }
+            }
+        }
+    }
+
+    private fun deletePhysicalFile(path: String) {
+        val f = File(path)
+        if (f.exists()) f.delete()
+        
+        // Scan the deleted path to forcefully purge it from the system's Music database
+        try {
+            android.media.MediaScannerConnection.scanFile(context, arrayOf(path), null, null)
+        } catch (_: Exception) {}
+        
+        // If File.delete() failed (e.g. Scoped Storage), try via ContentResolver
+        if (f.exists()) {
+            try {
+                val selection = MediaStore.MediaColumns.DATA + "=?"
+                val selectionArgs = arrayOf(path)
+                val uri = MediaStore.Files.getContentUri("external")
+                context.contentResolver.delete(uri, selection, selectionArgs)
+            } catch (_: Exception) {}
         }
     }
 
@@ -107,25 +146,48 @@ class DownloadManager(private val context: Context) {
         val m3u8Url = Scraper.resolveM3u8(episode.url)
         onProgress(0.05f)
 
-        // 3. Build output path: /sdcard/Download/TA3/<showName>/<date>-<title>.m4a
+        // 2. Look up the display name for the show (e.g. "Tlačové besedy")
+        val showDisplayName = TA3_SHOWS.find { it.name == episode.showName }?.displayName
+            ?: episode.showName
+
+        // 3. Build output path — we don't need date/time in the filename anymore
+        //    because it's properly embedded in the metadata for music apps to sort by.
         val safeTitle = episode.title
             .replace(Regex("[^a-zA-Z0-9áäčďéíľĺňóôŕšťúýžÁÄČĎÉÍĽĹŇÓÔŔŠŤÚÝŽ ._-]"), "")
             .trim()
             .replace(" ", "_")
             .take(80)
-        val fileName = "${episode.date}-${safeTitle}.m4a"
+        val fileName = "${safeTitle}.m4a"
         val outFile = File(showDownloadDir(episode.showName), fileName)
 
         if (outFile.exists()) outFile.delete()
 
-        // 4. Download and re-encode to m4a using FFmpegKit (exactly like CLI)
+        // 4. Build full ISO datetime string for the date metadata tag
+        val isoDateTime = if (episode.time.isNotEmpty())
+            "${episode.date}T${episode.time}:00"
+        else
+            episode.date
+
+        // Escape quotes in title for shell safety, and prepend date/time so it's visible
+        val displayTitle = "${episode.date}${if (episode.time.isNotEmpty()) " ${episode.time}" else ""} - ${episode.title}"
+        val safeMetaTitle = displayTitle.replace("\"", "'")
+        val safeMetaArtist = showDisplayName.replace("\"", "'")
+
+        // 5. Download and re-encode to m4a using FFmpegKit, embedding metadata so
+        //    music apps show correct artist, title, and can sort by date/time.
         val mediaInfo = com.arthenica.ffmpegkit.FFprobeKit.getMediaInformation(m3u8Url)
         val durationStr = mediaInfo.mediaInformation?.duration
         val durationMs = (durationStr?.toDoubleOrNull() ?: 0.0) * 1000.0
 
         kotlinx.coroutines.suspendCancellableCoroutine<Unit> { cont ->
+            // Use -map_metadata -1 to discard the 1970 creation_time from the stream
             val session = com.arthenica.ffmpegkit.FFmpegKit.executeAsync(
-                "-y -i \"$m3u8Url\" -vn -c:a copy \"${outFile.absolutePath}\"",
+                "-y -i \"$m3u8Url\" -vn -c:a copy -map_metadata -1 " +
+                    "-metadata artist=\"$safeMetaArtist\" " +
+                    "-metadata album=\"$safeMetaArtist\" " +
+                    "-metadata title=\"$safeMetaTitle\" " +
+                    "-metadata date=\"$isoDateTime\" " +
+                    "\"${outFile.absolutePath}\"",
                 { session ->
                     if (com.arthenica.ffmpegkit.ReturnCode.isSuccess(session.returnCode)) {
                         cont.resumeWith(Result.success(Unit))
@@ -149,6 +211,19 @@ class DownloadManager(private val context: Context) {
                 com.arthenica.ffmpegkit.FFmpegKit.cancel(session.sessionId)
             }
         }
+
+        // Parse date for setting file modification time
+        try {
+            val format = if (episode.time.isNotEmpty()) {
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            } else {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            }
+            val dateObj = format.parse(isoDateTime)
+            if (dateObj != null) {
+                outFile.setLastModified(dateObj.time)
+            }
+        } catch (_: Exception) {}
 
         // 5. Notify MediaStore so music apps index the new file immediately
         notifyMediaStore(outFile)
@@ -254,37 +329,18 @@ class DownloadManager(private val context: Context) {
      */
     private fun notifyMediaStore(file: File) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-                    put(MediaStore.Downloads.MIME_TYPE, "audio/mp4")
-                    put(MediaStore.Downloads.SIZE, file.length())
-                }
-                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            } else {
-                @Suppress("DEPRECATION")
-                android.media.MediaScannerConnection.scanFile(
-                    context, arrayOf(file.absolutePath), arrayOf("audio/mp4"), null
-                )
-            }
+            // Using MediaScannerConnection.scanFile makes the file show up in Music/Audio apps
+            android.media.MediaScannerConnection.scanFile(
+                context, arrayOf(file.absolutePath), arrayOf("audio/mp4"), null
+            )
         } catch (_: Exception) { /* non-fatal */ }
     }
 
     private fun notifyMediaStoreVideo(file: File) {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-                    put(MediaStore.Downloads.MIME_TYPE, "video/mp4")
-                    put(MediaStore.Downloads.SIZE, file.length())
-                }
-                context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            } else {
-                @Suppress("DEPRECATION")
-                android.media.MediaScannerConnection.scanFile(
-                    context, arrayOf(file.absolutePath), arrayOf("video/mp4"), null
-                )
-            }
+            android.media.MediaScannerConnection.scanFile(
+                context, arrayOf(file.absolutePath), arrayOf("video/mp4"), null
+            )
         } catch (_: Exception) { /* non-fatal */ }
     }
 }

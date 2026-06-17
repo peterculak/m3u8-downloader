@@ -67,7 +67,25 @@ object Scraper {
 
             if (title.isEmpty()) continue
 
-            episodes.add(Episode(title = title, date = date, url = url, showName = show.name))
+            // Extract time from <span class="article_date">dnes 15:28</span>
+            // Works for "dnes HH:MM", "včera HH:MM", or any text containing a time
+            var time = ""
+            val dateSpanMatch = Regex(
+                """<span[^>]+class=["'][^"']*article_date[^"']*["'][^>]*>([\s\S]*?)</span>""",
+                RegexOption.IGNORE_CASE
+            ).find(content)
+            if (dateSpanMatch != null) {
+                val spanText = dateSpanMatch.groupValues[1]
+                    .replace(Regex("<[^>]+>"), "").trim()
+                val timeMatch = Regex("""(\d{1,2}:\d{2})""").find(spanText)
+                if (timeMatch != null) {
+                    // Normalise to HH:MM (zero-pad single-digit hours)
+                    val parts = timeMatch.groupValues[1].split(":")
+                    time = "${parts[0].padStart(2, '0')}:${parts[1]}"
+                }
+            }
+
+            episodes.add(Episode(title = title, date = date, time = time, url = url, showName = show.name))
         }
 
         episodes

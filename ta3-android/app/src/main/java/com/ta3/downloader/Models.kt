@@ -11,6 +11,7 @@ data class Show(
 data class Episode(
     val title: String,
     val date: String,
+    val time: String = "",   // HH:MM extracted from article_date span, empty if not available
     val url: String,       // episode page URL
     val showName: String
 )
@@ -63,5 +64,20 @@ val TA3_SHOWS = listOf(
         name = "tlacove-besedy",
         displayName = "Tlačové besedy",
         url = "https://www.ta3.com/tlacove-besedy"
+    ),
+    Show(
+        name = "tema-dna",
+        displayName = "Téma dňa",
+        url = "https://www.ta3.com/tema-dna"
+    ),
+    Show(
+        name = "kral-na-tahu",
+        displayName = "Kráľ na ťahu",
+        url = "https://www.ta3.com/kral-na-tahu"
+    ),
+    Show(
+        name = "v-politike",
+        displayName = "V politike",
+        url = "https://www.ta3.com/v-politike"
     )
 )

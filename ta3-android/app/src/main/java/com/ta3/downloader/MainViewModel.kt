@@ -23,6 +23,7 @@ data class UiState(
     // Settings
     val syncIntervalHours: Int = AppSettings.DEFAULT_INTERVAL_HOURS,
     val autoDownloadEnabled: Boolean = true,
+    val wifiOnlyDownload: Boolean = true,
     val showEnabledMap: Map<String, Boolean> = TA3_SHOWS.associate { it.name to true },
     val prehrajEmail: String = "",
     val prehrajPassword: String = "",
@@ -50,6 +51,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         UiState(
             syncIntervalHours = settings.syncIntervalHours,
             autoDownloadEnabled = settings.autoDownloadEnabled,
+            wifiOnlyDownload = settings.wifiOnlyDownload,
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword
@@ -133,6 +135,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             downloadManager.deleteDownload(episodeUrl)
             _state.update { it.copy(downloadedFiles = it.downloadedFiles.filter { f -> f.episodeUrl != episodeUrl }) }
+        }
+    }
+
+    fun clearAllDownloads() {
+        viewModelScope.launch {
+            downloadManager.clearAllDownloads()
+            _state.update { it.copy(downloadedFiles = emptyList()) }
         }
     }
 
@@ -234,6 +243,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowEnabled(showName: String, enabled: Boolean) {
         settings.setShowEnabled(showName, enabled)
         _state.update { it.copy(showEnabledMap = it.showEnabledMap + (showName to enabled)) }
+    }
+
+    fun setWifiOnly(wifiOnly: Boolean) {
+        settings.wifiOnlyDownload = wifiOnly
+        _state.update { it.copy(wifiOnlyDownload = wifiOnly) }
+        // Re-schedule so the new network constraint takes effect immediately
+        if (settings.autoDownloadEnabled) {
+            AutoDownloadWorker.schedule(getApplication(), settings.syncIntervalHours)
+        }
     }
 
     fun setPrehrajEmail(email: String) {
