@@ -9,6 +9,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -49,6 +51,11 @@ class DownloadManager(private val context: Context) {
     private fun prehrajDownloadDir(): File {
         val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         return File(base, "Prehraj").also { it.mkdirs() }
+    }
+
+    private fun youtubeDownloadDir(showName: String): File {
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return File(base, "YouTube/$showName").also { it.mkdirs() }
     }
 
     private val registryMutex = kotlinx.coroutines.sync.Mutex()
@@ -118,6 +125,10 @@ class DownloadManager(private val context: Context) {
             val prehrajBase = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Prehraj")
             if (prehrajBase.exists()) {
                 prehrajBase.walkBottomUp().forEach { if (it.isFile) deletePhysicalFile(it.absolutePath) }
+            }
+            val ytBase = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "YouTube")
+            if (ytBase.exists()) {
+                ytBase.walkBottomUp().forEach { if (it.isFile) deletePhysicalFile(it.absolutePath) }
             }
         }
     }
@@ -391,6 +402,174 @@ class DownloadManager(private val context: Context) {
         }
 
         notifyMediaStoreVideo(outFile)
+
+        val record = DownloadedFile(
+            episodeUrl = episode.url,
+            title = episode.title,
+            date = episode.date,
+            showName = episode.showName,
+            localPath = outFile.absolutePath,
+            fileSizeBytes = outFile.length()
+        )
+        registryMutex.withLock {
+            val registry = loadRegistryInternal().filter { it.episodeUrl != episode.url }.toMutableList()
+            registry.add(0, record)
+            saveRegistryInternal(registry)
+        }
+
+        record
+    }
+
+    /**
+     * Download a YouTube video's audio track to Downloads/YouTube/<showName>/<title>.m4a
+     * Uses NewPipeExtractor to resolve the direct audio stream URL, then FFmpeg to download.
+     */
+    suspend fun downloadYouTubeAudio(
+        episode: Episode,
+        onProgress: (Float) -> Unit
+    ): DownloadedFile = withContext(Dispatchers.IO) {
+        onProgress(0f)
+
+        // 1. Resolve the direct audio stream URL and duration via NewPipeExtractor
+        val (audioUrl, durationMs) = YouTubeScraper.resolveAudioUrlAndDuration(episode.url)
+        onProgress(0.05f)
+
+        // 2. Look up display name for the channel
+        val channel = YOUTUBE_CHANNELS.find { it.name == episode.showName }
+        val showDisplayName = channel?.displayName ?: episode.showName
+
+        // 3. Build output path
+        val safeTitle = episode.title
+            .replace(Regex("[^a-zA-Z0-9áäčďéíľĺňóôŕšťúýžÁÄČĎÉÍĽĹŇÓÔŔŠŤÚÝŽ ._-]"), "")
+            .trim()
+            .replace(" ", "_")
+            .take(80)
+        val fileName = "${safeTitle}.m4a"
+        val outFile = File(youtubeDownloadDir(episode.showName), fileName)
+        if (outFile.exists()) outFile.delete()
+
+        // 4. Build ISO datetime and display title for metadata
+        val isoDateTime = if (episode.time.isNotEmpty())
+            "${episode.date}T${episode.time}:00"
+        else
+            episode.date
+        val displayTitle = "${episode.date}${if (episode.time.isNotEmpty()) " ${episode.time}" else ""} - ${episode.title}"
+        val safeMetaTitle = displayTitle.replace("\"", "'")
+        val safeMetaArtist = showDisplayName.replace("\"", "'")
+
+        // 5. Download with OkHttp to a temporary file using high-speed parallel chunking
+        val tempFile = File(youtubeDownloadDir(episode.showName), "$fileName.tmp")
+        if (tempFile.exists()) tempFile.delete()
+
+        // First, check content length to enable parallel chunking
+        val headRequest = okhttp3.Request.Builder()
+            .url(audioUrl)
+            .head()
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .build()
+            
+        val contentLength = client.newCall(headRequest).execute().use { response ->
+            response.header("Content-Length")?.toLongOrNull() ?: -1L
+        }
+
+        if (contentLength > 0) {
+            val chunkSize = 2L * 1024 * 1024 // 2MB chunks
+            val numChunks = kotlin.math.ceil(contentLength.toDouble() / chunkSize).toInt()
+            val downloadedBytes = java.util.concurrent.atomic.AtomicLong(0)
+            
+            val raf = java.io.RandomAccessFile(tempFile, "rw")
+            raf.setLength(contentLength)
+            
+            // Limit to 6 concurrent connections to bypass throttle without getting IP banned
+            val dispatcher = kotlinx.coroutines.Dispatchers.IO.limitedParallelism(6)
+            
+            kotlinx.coroutines.coroutineScope {
+                val jobs = (0 until numChunks).map { i: Int ->
+                    async(dispatcher) {
+                        val start = i * chunkSize
+                        val end = if (i == numChunks - 1) contentLength - 1 else start + chunkSize - 1
+                        
+                        val request = okhttp3.Request.Builder()
+                            .url(audioUrl)
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                            .header("Range", "bytes=$start-$end")
+                            .build()
+                            
+                        client.newCall(request).execute().use { response ->
+                            if (!response.isSuccessful) throw Exception("HTTP ${response.code} fetching chunk $i")
+                            val bytes = response.body?.bytes() ?: throw Exception("Null body in chunk $i")
+                            synchronized(raf) {
+                                raf.seek(start)
+                                raf.write(bytes)
+                            }
+                            val currentProg = downloadedBytes.addAndGet(bytes.size.toLong()).toFloat() / contentLength
+                            onProgress(0.05f + currentProg * 0.90f)
+                        }
+                    }
+                }
+                jobs.awaitAll()
+            }
+            raf.close()
+        } else {
+            // Fallback to sequential if content length is completely unknown
+            val request = okhttp3.Request.Builder()
+                .url(audioUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw Exception("HTTP ${response.code} downloading YouTube audio")
+                
+                var downloaded = 0L
+                var lastReportedProgress = 0f
+                
+                val buffer = ByteArray(256 * 1024)
+                java.io.BufferedOutputStream(FileOutputStream(tempFile), 256 * 1024).use { out ->
+                    val input = response.body!!.byteStream()
+                    var bytes = input.read(buffer)
+                    while (bytes >= 0) {
+                        out.write(buffer, 0, bytes)
+                        downloaded += bytes
+                        onProgress(0.5f) // Indeterminate progress
+                        bytes = input.read(buffer)
+                    }
+                }
+            }
+        }
+
+        onProgress(0.95f)
+
+        // 6. Add metadata using FFmpeg (local to local copy)
+        val session = com.arthenica.ffmpegkit.FFmpegKit.execute(
+            "-y -i \"${tempFile.absolutePath}\" -vn -c:a copy -map_metadata -1 " +
+                "-metadata artist=\"$safeMetaArtist\" " +
+                "-metadata album=\"$safeMetaArtist\" " +
+                "-metadata title=\"$safeMetaTitle\" " +
+                "-metadata date=\"$isoDateTime\" " +
+                "\"${outFile.absolutePath}\""
+        )
+        tempFile.delete()
+
+        if (!com.arthenica.ffmpegkit.ReturnCode.isSuccess(session.returnCode)) {
+            val failLog = session.failStackTrace ?: "Unknown error"
+            throw Exception("FFmpeg metadata application failed: ${session.returnCode} - $failLog")
+        }
+
+        onProgress(1.0f)
+
+        // 7. Set file modification time from episode date
+        try {
+            val format = if (episode.time.isNotEmpty()) {
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            } else {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            }
+            val dateObj = format.parse(isoDateTime)
+            if (dateObj != null) outFile.setLastModified(dateObj.time)
+        } catch (_: Exception) {}
+
+        // 8. Notify MediaStore and register in registry
+        notifyMediaStore(outFile)
 
         val record = DownloadedFile(
             episodeUrl = episode.url,

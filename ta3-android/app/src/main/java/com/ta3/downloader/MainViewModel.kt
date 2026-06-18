@@ -41,10 +41,17 @@ data class UiState(
     val prehrajSearchError: String? = null,
     val prehrajLoginStatus: PrehrajLoginStatus = PrehrajLoginStatus.LOGGED_OUT,
     val prehrajLoginError: String? = null,
-    val prehrajResolvedUrls: Map<String, String> = emptyMap()
+    val prehrajResolvedUrls: Map<String, String> = emptyMap(),
+    // YouTube
+    val selectedYtChannel: YouTubeChannel = YOUTUBE_CHANNELS[0],
+    val ytEpisodes: List<Episode> = emptyList(),
+    val ytLoadingEpisodes: Boolean = false,
+    val ytEpisodeLoadError: String? = null,
+    val ytSearchQuery: String = "",
+    val ytChannelEnabledMap: Map<String, Boolean> = YOUTUBE_CHANNELS.associate { it.name to true }
 )
 
-enum class Tab { EPISODES, STVR, DOWNLOADS, SETTINGS, PREHRAJ }
+enum class Tab { EPISODES, STVR, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
 
 enum class PrehrajLoginStatus { LOGGED_OUT, LOGGING_IN, LOGGED_IN, FAILED }
 
@@ -61,6 +68,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             wifiOnlyDownload = settings.wifiOnlyDownload,
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
+            ytChannelEnabledMap = YOUTUBE_CHANNELS.associate { it.name to settings.isShowEnabled(it.name) },
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword
         )
@@ -72,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeActiveDownloads()
         fetchEpisodes(TA3_SHOWS[0])
         fetchStvrEpisodes(STVR_SHOWS[0])
+        fetchYtEpisodes(YOUTUBE_CHANNELS[0])
         // Auto-login to prehraj.to on startup if credentials are saved
         if (settings.prehrajEmail.isNotEmpty() && settings.prehrajPassword.isNotEmpty()) {
             loginPrehraj()
@@ -154,9 +163,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun cancelPrehrajDownload(episodeUrl: String) {
+    fun cancelDownload(episodeUrl: String) {
         DownloadEpisodeWorker.cancel(getApplication(), episodeUrl)
         DownloadStateTracker.removeDownload(episodeUrl)
+        viewModelScope.launch {
+            downloadManager.clearPending(episodeUrl)
+        }
     }
 
     // ─── Prehraj.to ────────────────────────────────────────────────────────────
@@ -328,6 +340,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val q = _state.value.stvrSearchQuery.lowercase()
             return if (q.isEmpty()) _state.value.stvrEpisodes
             else _state.value.stvrEpisodes.filter {
+                it.title.lowercase().contains(q) || it.date.contains(q)
+            }
+        }
+
+    // ─── YouTube Channels ──────────────────────────────────────────────────────
+
+    fun selectYtChannel(channel: YouTubeChannel) {
+        _state.update { it.copy(selectedYtChannel = channel) }
+        fetchYtEpisodes(channel)
+    }
+
+    fun fetchYtEpisodes(channel: YouTubeChannel = _state.value.selectedYtChannel) {
+        viewModelScope.launch {
+            _state.update { it.copy(ytLoadingEpisodes = true, ytEpisodeLoadError = null) }
+            try {
+                val episodes = YouTubeScraper.fetchEpisodes(channel)
+                _state.update { it.copy(ytEpisodes = episodes, ytLoadingEpisodes = false) }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        ytLoadingEpisodes = false,
+                        ytEpisodeLoadError = "Failed to load YouTube episodes: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun startYtDownload(episode: Episode) {
+        if (_state.value.activeDownloads.containsKey(episode.url)) return
+        DownloadEpisodeWorker.enqueue(getApplication(), episode)
+    }
+
+    fun setYtSearchQuery(q: String) = _state.update { it.copy(ytSearchQuery = q) }
+
+    fun setYtChannelEnabled(channelName: String, enabled: Boolean) {
+        settings.setShowEnabled(channelName, enabled)
+        _state.update { it.copy(ytChannelEnabledMap = it.ytChannelEnabledMap + (channelName to enabled)) }
+    }
+
+    val filteredYtEpisodes: List<Episode>
+        get() {
+            val q = _state.value.ytSearchQuery.lowercase()
+            return if (q.isEmpty()) _state.value.ytEpisodes
+            else _state.value.ytEpisodes.filter {
                 it.title.lowercase().contains(q) || it.date.contains(q)
             }
         }

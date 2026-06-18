@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.ffmpeg.kit.https)
     implementation(libs.androidx.appcompat)
+    implementation(libs.newpipe.extractor)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

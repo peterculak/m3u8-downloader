@@ -47,8 +47,14 @@ class DownloadEpisodeWorker(
                     DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
                     setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))
                 }
+            } else if (YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
+                // YouTube audio download via NewPipeExtractor + FFmpeg
+                downloadManager.downloadYouTubeAudio(episode) { progress ->
+                    DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
+                    setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))
+                }
             } else {
-                // TA3 HLS download
+                // TA3/STVR HLS download
                 downloadManager.download(episode) { progress ->
                     DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
                     setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))

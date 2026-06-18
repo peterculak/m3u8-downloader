@@ -113,3 +113,20 @@ val STVR_SHOWS = listOf(
     )
 )
 
+// ─── YouTube Channel Definitions ─────────────────────────────────────────────
+
+data class YouTubeChannel(
+    val name: String,           // internal key, e.g. "brano-zavodsky"
+    val displayName: String,    // shown in UI, e.g. "Braňo Závodský"
+    val channelId: String,      // YouTube channel ID starting with UC...
+    val channelUrl: String      // full YouTube channel URL
+)
+
+val YOUTUBE_CHANNELS = listOf(
+    YouTubeChannel(
+        name = "brano-zavodsky",
+        displayName = "Braňo Závodský",
+        channelId = "UCW1pHS8ZHpI33xnOhBvSGyQ",
+        channelUrl = "https://www.youtube.com/@Bra%C5%88oZ%C3%A1vodsk%C3%BDNa%C5%BEivo"
+    )
+)

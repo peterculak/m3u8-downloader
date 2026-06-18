@@ -88,6 +88,12 @@ fun DownloaderApp(viewModel: MainViewModel) {
                         onClick = { viewModel.selectTab(Tab.STVR) }
                     )
                     TabItem(
+                        icon = Icons.Outlined.OndemandVideo,
+                        label = "YouTube",
+                        selected = state.selectedTab == Tab.YOUTUBE,
+                        onClick = { viewModel.selectTab(Tab.YOUTUBE) }
+                    )
+                    TabItem(
                         icon = Icons.Outlined.FolderOpen,
                         label = "Stiahnuté (${state.downloadedFiles.size})",
                         selected = state.selectedTab == Tab.DOWNLOADS,
@@ -120,6 +126,11 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 viewModel = viewModel,
                 modifier = Modifier.padding(innerPadding)
             )
+            Tab.YOUTUBE -> YouTubeTab(
+                state = state,
+                viewModel = viewModel,
+                modifier = Modifier.padding(innerPadding)
+            )
             Tab.DOWNLOADS -> DownloadsTab(
                 state = state,
                 onDelete = { viewModel.deleteDownload(it.episodeUrl) },
@@ -133,7 +144,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onSearch = { viewModel.searchPrehraj() },
                 onExtractUrl = { viewModel.extractPrehrajUrl(it) },
                 onDownload = { movie, url -> viewModel.downloadPrehrajMovie(movie, url) },
-                onCancelDownload = { viewModel.cancelPrehrajDownload(it) },
+                onCancelDownload = { viewModel.cancelDownload(it) },
                 modifier = Modifier.padding(innerPadding)
             )
             Tab.SETTINGS -> SettingsTab(
@@ -143,6 +154,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onWifiOnlyToggle = { viewModel.setWifiOnly(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
                 onStvrShowToggle = { name, enabled -> viewModel.setStvrShowEnabled(name, enabled) },
+                onYtChannelToggle = { name, enabled -> viewModel.setYtChannelEnabled(name, enabled) },
                 onPrehrajEmailChange = { viewModel.setPrehrajEmail(it) },
                 onPrehrajPasswordChange = { viewModel.setPrehrajPassword(it) },
                 onPrehrajLogin = { viewModel.loginPrehraj() },
@@ -305,7 +317,8 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                                 episode = episode,
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
-                                onDownload = { viewModel.startDownload(episode) }
+                                onDownload = { viewModel.startDownload(episode) },
+                                onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
                     }
@@ -416,7 +429,120 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
                                 episode = episode,
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
-                                onDownload = { viewModel.startStvrDownload(episode) }
+                                onDownload = { viewModel.startStvrDownload(episode) },
+                                onCancelDownload = { viewModel.cancelDownload(episode.url) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize()) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            YOUTUBE_CHANNELS.forEach { channel ->
+                val selected = channel.name == state.selectedYtChannel.name
+                FilterChip(
+                    selected = selected,
+                    onClick = { viewModel.selectYtChannel(channel) },
+                    label = { Text(channel.displayName, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = Color.White
+                    )
+                )
+            }
+        }
+
+        // Search bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Search, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                BasicTextField(
+                    value = state.ytSearchQuery,
+                    onValueChange = viewModel::setYtSearchQuery,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        if (state.ytSearchQuery.isEmpty()) {
+                            Text("Hľadať epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        }
+                        inner()
+                    }
+                )
+                if (state.ytSearchQuery.isNotEmpty()) {
+                    Icon(Icons.Default.Close, "Vymazať",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp).clickable { viewModel.setYtSearchQuery("") })
+                }
+            }
+        }
+
+        when {
+            state.ytLoadingEpisodes -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Načítavam epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            state.ytEpisodeLoadError != null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.ErrorOutline, null,
+                            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text(state.ytEpisodeLoadError, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { viewModel.fetchYtEpisodes() }) { Text("Opakovať") }
+                    }
+                }
+            }
+            else -> {
+                val episodes = viewModel.filteredYtEpisodes
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (episodes.isEmpty()) {
+                        item {
+                            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Žiadne epizódy", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        items(episodes, key = { it.url }) { episode ->
+                            EpisodeCard(
+                                episode = episode,
+                                isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
+                                activeDownload = state.activeDownloads[episode.url],
+                                onDownload = { viewModel.startYtDownload(episode) },
+                                onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
                     }
@@ -431,7 +557,8 @@ fun EpisodeCard(
     episode: Episode,
     isDownloaded: Boolean,
     activeDownload: ActiveDownload?,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -466,8 +593,14 @@ fun EpisodeCard(
                                 },
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium
                             )
-                            if (activeDownload.status == DownloadStatus.DONE) {
-                                Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (activeDownload.status == DownloadStatus.DONE) {
+                                    Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                                } else {
+                                    IconButton(onClick = onCancelDownload, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Default.Close, contentDescription = "Zrušiť", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                    }
+                                }
                             }
                         }
                         Spacer(Modifier.height(6.dp))
@@ -728,6 +861,7 @@ fun SettingsTab(
     onWifiOnlyToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
     onStvrShowToggle: (String, Boolean) -> Unit,
+    onYtChannelToggle: (String, Boolean) -> Unit,
     onPrehrajEmailChange: (String) -> Unit,
     onPrehrajPasswordChange: (String) -> Unit,
     onPrehrajLogin: () -> Unit,
@@ -895,6 +1029,42 @@ fun SettingsTab(
                             )
                         }
                         if (index < STVR_SHOWS.size - 1) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // YouTube channel toggles
+        item {
+            SettingSection(title = "YouTube kanály") {
+                Column {
+                    YOUTUBE_CHANNELS.forEachIndexed { index, channel ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(channel.displayName, color = MaterialTheme.colorScheme.onBackground,
+                                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(channel.channelUrl, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Switch(
+                                checked = state.ytChannelEnabledMap[channel.name] ?: true,
+                                onCheckedChange = { onYtChannelToggle(channel.name, it) },
+                                enabled = state.autoDownloadEnabled,
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                        if (index < YOUTUBE_CHANNELS.size - 1) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)

@@ -34,6 +34,9 @@ class AppSettings(context: Context) {
     fun enabledStvrShows(): List<Show> =
         STVR_SHOWS.filter { isShowEnabled(it.name) }
 
+    fun enabledYouTubeChannels(): List<YouTubeChannel> =
+        YOUTUBE_CHANNELS.filter { isShowEnabled(it.name) }
+
     // ─── First-run flag ─────────────────────────────────────────────────────────
 
     var autoDownloadEnabled: Boolean

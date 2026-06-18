@@ -75,6 +75,10 @@ class AutoDownloadWorker(
                             downloadManager.downloadDirectMp4(episode, p.directUrl) { progress ->
                                 DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
                             }
+                        } else if (YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
+                            downloadManager.downloadYouTubeAudio(episode) { progress ->
+                                DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                            }
                         } else {
                             downloadManager.download(episode) { progress ->
                                 DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
@@ -206,7 +210,59 @@ class AutoDownloadWorker(
                     Log.e(TAG, "Failed to fetch STVR ${show.displayName}: ${e.message}")
                 }
             }
-            
+
+            // --- YouTube channels ---
+            val enabledYtChannels = settings.enabledYouTubeChannels()
+            for (channel in enabledYtChannels) {
+                try {
+                    Log.d(TAG, "Fetching episodes for YouTube channel: ${channel.displayName}")
+                    val episodes = YouTubeScraper.fetchEpisodes(channel)
+
+                    // Only download today's episodes
+                    val recent = episodes.filter { it.date == today }
+
+                    for (episode in recent) {
+                        if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
+                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            continue
+                        }
+
+                        val job = async {
+                            try {
+                                Log.d(TAG, "Downloading YouTube: ${episode.title}")
+                                downloadManager.markPending(episode)
+                                DownloadStateTracker.addDownload(episode.url, episode.title, channel.displayName)
+
+                                downloadManager.downloadYouTubeAudio(episode) { progress ->
+                                    DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                                }
+
+                                downloadManager.markComplete(episode.url)
+                                DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
+                                synchronized(downloaded) {
+                                    if (!downloaded.contains(channel.displayName)) {
+                                        downloaded.add(channel.displayName)
+                                    }
+                                }
+                                Log.d(TAG, "Done YouTube: ${episode.title}")
+
+                                kotlinx.coroutines.delay(1500)
+                                DownloadStateTracker.removeDownload(episode.url)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to download YouTube ${episode.title}: ${e.message}")
+                                downloadManager.markFailed(episode.url)
+                                DownloadStateTracker.updateError(episode.url, e.message)
+                                kotlinx.coroutines.delay(4000)
+                                DownloadStateTracker.removeDownload(episode.url)
+                            }
+                        }
+                        jobs.add(job)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to fetch YouTube ${channel.displayName}: ${e.message}")
+                }
+            }
+
             // Wait for all concurrent downloads to finish
             jobs.forEach { it.await() }
         }
