@@ -171,6 +171,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun downloadSharedYouTubeVideo(url: String) {
+        viewModelScope.launch {
+            try {
+                // Fetch basic metadata from the URL using NewPipeExtractor
+                val episode = YouTubeScraper.resolveSharedVideoDetails(url)
+                
+                // Add it to our registry and trigger the worker exactly as AutoDownloader does
+                downloadManager.markPending(episode)
+                DownloadEpisodeWorker.enqueue(getApplication(), episode)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to resolve shared video: ${e.message}")
+            }
+        }
+    }
+
     // ─── Prehraj.to ────────────────────────────────────────────────────────────
 
     fun loginPrehraj(

@@ -1,6 +1,7 @@
 package com.ta3.downloader
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -43,12 +44,37 @@ class MainActivity : ComponentActivity() {
             AutoDownloadWorker.schedule(this, settings.syncIntervalHours)
         }
 
-        // Always trigger an immediate check on open (today's episodes)
-        AutoDownloadWorker.runNow(this)
+        // Only trigger auto-download check on a fresh cold-start from the launcher, 
+        // not when rotating the screen or receiving a shared video from YouTube
+        if (savedInstanceState == null && intent?.action == Intent.ACTION_MAIN) {
+            AutoDownloadWorker.runNow(this)
+        }
+
+        handleIntent(intent)
 
         setContent {
             TA3Theme {
                 DownloaderApp(viewModel = viewModel)
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+            
+            // Extract the YouTube URL using regex
+            val regex = Regex("""(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[a-zA-Z0-9_-]+)""")
+            val match = regex.find(sharedText)
+            
+            if (match != null) {
+                val url = match.value
+                viewModel.downloadSharedYouTubeVideo(url)
             }
         }
     }

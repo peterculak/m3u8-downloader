@@ -47,7 +47,7 @@ class DownloadEpisodeWorker(
                     DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)
                     setProgressBlocking(workDataOf(KEY_PROGRESS to progress, KEY_STATUS to "downloading"))
                 }
-            } else if (YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
+            } else if (episode.url.contains("youtube.com") || episode.url.contains("youtu.be") || YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
                 // YouTube audio download via NewPipeExtractor + FFmpeg
                 downloadManager.downloadYouTubeAudio(episode) { progress ->
                     DownloadStateTracker.updateProgress(episodeUrl, progress, DownloadStatus.DOWNLOADING)

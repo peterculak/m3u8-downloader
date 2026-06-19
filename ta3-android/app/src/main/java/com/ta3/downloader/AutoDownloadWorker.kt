@@ -75,7 +75,7 @@ class AutoDownloadWorker(
                             downloadManager.downloadDirectMp4(episode, p.directUrl) { progress ->
                                 DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
                             }
-                        } else if (YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
+                        } else if (episode.url.contains("youtube.com") || episode.url.contains("youtu.be") || YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
                             downloadManager.downloadYouTubeAudio(episode) { progress ->
                                 DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
                             }
@@ -107,55 +107,58 @@ class AutoDownloadWorker(
                 jobs.add(job)
             }
 
-            for (show in enabledShows) {
-                try {
-                    Log.d(TAG, "Fetching episodes for ${show.displayName}")
-                    val episodes = Scraper.fetchEpisodes(show)
+            val isRetryOnly = inputData.getBoolean("is_retry_only", false)
+            if (!isRetryOnly) {
+                for (show in enabledShows) {
+                    try {
+                        Log.d(TAG, "Fetching episodes for ${show.displayName}")
+                        val episodes = Scraper.fetchEpisodes(show)
 
-                    // Only download today's episodes
-                    val recent = episodes.filter { it.date == today }
+                        // Only download today's episodes
+                        val recent = episodes.filter { it.date == today }
 
-                    for (episode in recent) {
-                        // Skip if already downloaded or currently retrying
-                        if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
-                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
-                            continue
-                        }
-
-                        val job = async {
-                            try {
-                                Log.d(TAG, "Downloading: ${episode.title}")
-                                downloadManager.markPending(episode)
-                                DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
-                                
-                                downloadManager.download(episode) { progress ->
-                                    DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
-                                }
-                                
-                                downloadManager.markComplete(episode.url)
-                                DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
-                                synchronized(downloaded) {
-                                    if (!downloaded.contains(show.displayName)) {
-                                        downloaded.add(show.displayName)
-                                    }
-                                }
-                                Log.d(TAG, "Done: ${episode.title}")
-                                
-                                kotlinx.coroutines.delay(1500)
-                                DownloadStateTracker.removeDownload(episode.url)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Failed to download ${episode.title}: ${e.message}")
-                                downloadManager.markFailed(episode.url)
-                                DownloadStateTracker.updateError(episode.url, e.message)
-                                kotlinx.coroutines.delay(4000)
-                                DownloadStateTracker.removeDownload(episode.url)
+                        for (episode in recent) {
+                            // Skip if already downloaded or currently retrying
+                            if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
+                                Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                                continue
                             }
-                        }
-                        jobs.add(job)
-                    }
 
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to fetch ${show.displayName}: ${e.message}")
+                            val job = async {
+                                try {
+                                    Log.d(TAG, "Downloading: ${episode.title}")
+                                    downloadManager.markPending(episode)
+                                    DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
+                                    
+                                    downloadManager.download(episode) { progress ->
+                                        DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                                    }
+                                    
+                                    downloadManager.markComplete(episode.url)
+                                    DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
+                                    synchronized(downloaded) {
+                                        if (!downloaded.contains(show.displayName)) {
+                                            downloaded.add(show.displayName)
+                                        }
+                                    }
+                                    Log.d(TAG, "Done: ${episode.title}")
+                                    
+                                    kotlinx.coroutines.delay(1500)
+                                    DownloadStateTracker.removeDownload(episode.url)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to download ${episode.title}: ${e.message}")
+                                    downloadManager.markFailed(episode.url)
+                                    DownloadStateTracker.updateError(episode.url, e.message)
+                                    kotlinx.coroutines.delay(4000)
+                                    DownloadStateTracker.removeDownload(episode.url)
+                                }
+                            }
+                            jobs.add(job)
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to fetch ${show.displayName}: ${e.message}")
+                    }
                 }
             }
 
@@ -304,6 +307,7 @@ class AutoDownloadWorker(
                         .setRequiredNetworkType(networkType)
                         .build()
                 )
+                .setInputData(workDataOf("is_retry_only" to true))
                 .setInitialDelay(5, TimeUnit.MINUTES)
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(

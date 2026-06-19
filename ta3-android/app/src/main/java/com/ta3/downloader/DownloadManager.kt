@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,14 @@ class DownloadManager(private val context: Context) {
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
         .build()
+
+    companion object {
+        private const val TAG = "DownloadManager"
+        // YouTube DASH init segment / bogus Content-Length when range metadata is wrong
+        private const val YOUTUBE_INIT_SEGMENT_BYTES = 65536L
+        private const val YOUTUBE_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+    }
 
     // Registry lives in internal storage (always accessible to this app)
     private val registryFile: File
@@ -461,40 +470,41 @@ class DownloadManager(private val context: Context) {
         val tempFile = File(youtubeDownloadDir(episode.showName), "$fileName.tmp")
         if (tempFile.exists()) tempFile.delete()
 
-        // First, check content length to enable parallel chunking
-        val headRequest = okhttp3.Request.Builder()
-            .url(audioUrl)
-            .head()
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .build()
-            
-        val contentLength = client.newCall(headRequest).execute().use { response ->
-            response.header("Content-Length")?.toLongOrNull() ?: -1L
-        }
+        // Extract the true content length from the YouTube URL itself ('clen' parameter).
+        // A HEAD request to a YouTube DASH stream will often falsely return 65536 (64KB),
+        // causing our chunker to only download the first 64KB of the file!
+        val clenMatch = Regex("[?&]clen=(\\d+)").find(audioUrl)
+        val contentLength = clenMatch?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+        Log.d(TAG, "YouTube download clen=$contentLength durationMs=$durationMs url=${audioUrl.take(120)}...")
 
-        if (contentLength > 0) {
+        val expectedMinBytes = if (durationMs > 0) (durationMs / 1000.0 * 8000).toLong() else 0L
+        val useOkHttp = contentLength > YOUTUBE_INIT_SEGMENT_BYTES &&
+            (expectedMinBytes <= 0 || contentLength >= expectedMinBytes / 4)
+
+        if (useOkHttp) {
             val chunkSize = 2L * 1024 * 1024 // 2MB chunks
             val numChunks = kotlin.math.ceil(contentLength.toDouble() / chunkSize).toInt()
             val downloadedBytes = java.util.concurrent.atomic.AtomicLong(0)
-            
+
             val raf = java.io.RandomAccessFile(tempFile, "rw")
             raf.setLength(contentLength)
-            
+
             // Limit to 6 concurrent connections to bypass throttle without getting IP banned
             val dispatcher = kotlinx.coroutines.Dispatchers.IO.limitedParallelism(6)
-            
+
             kotlinx.coroutines.coroutineScope {
                 val jobs = (0 until numChunks).map { i: Int ->
                     async(dispatcher) {
                         val start = i * chunkSize
                         val end = if (i == numChunks - 1) contentLength - 1 else start + chunkSize - 1
-                        
+
                         val request = okhttp3.Request.Builder()
                             .url(audioUrl)
-                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                            .header("User-Agent", YOUTUBE_USER_AGENT)
+                            .header("Referer", "https://www.youtube.com/")
                             .header("Range", "bytes=$start-$end")
                             .build()
-                            
+
                         client.newCall(request).execute().use { response ->
                             if (!response.isSuccessful) throw Exception("HTTP ${response.code} fetching chunk $i")
                             val bytes = response.body?.bytes() ?: throw Exception("Null body in chunk $i")
@@ -510,31 +520,28 @@ class DownloadManager(private val context: Context) {
                 jobs.awaitAll()
             }
             raf.close()
-        } else {
-            // Fallback to sequential if content length is completely unknown
-            val request = okhttp3.Request.Builder()
-                .url(audioUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
 
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw Exception("HTTP ${response.code} downloading YouTube audio")
-                
-                var downloaded = 0L
-                var lastReportedProgress = 0f
-                
-                val buffer = ByteArray(256 * 1024)
-                java.io.BufferedOutputStream(FileOutputStream(tempFile), 256 * 1024).use { out ->
-                    val input = response.body!!.byteStream()
-                    var bytes = input.read(buffer)
-                    while (bytes >= 0) {
-                        out.write(buffer, 0, bytes)
-                        downloaded += bytes
-                        onProgress(0.5f) // Indeterminate progress
-                        bytes = input.read(buffer)
-                    }
-                }
+            val downloadedSize = tempFile.length()
+            if (downloadedSize <= YOUTUBE_INIT_SEGMENT_BYTES ||
+                (contentLength > 0 && downloadedSize < contentLength * 9 / 10)) {
+                Log.w(
+                    TAG,
+                    "OkHttp YouTube download looks truncated ($downloadedSize / $contentLength bytes) — retrying with FFmpeg"
+                )
+                tempFile.delete()
+                downloadYouTubeStreamWithFfmpeg(audioUrl, tempFile)
+                onProgress(0.90f)
             }
+        } else {
+            Log.d(TAG, "Using FFmpeg for YouTube download (clen=$contentLength, expectedMin=$expectedMinBytes)")
+            onProgress(0.5f)
+            downloadYouTubeStreamWithFfmpeg(audioUrl, tempFile)
+        }
+
+        if (tempFile.length() <= YOUTUBE_INIT_SEGMENT_BYTES) {
+            throw Exception(
+                "YouTube download produced only ${tempFile.length()} bytes — stream URL may be expired or blocked"
+            )
         }
 
         onProgress(0.95f)
@@ -586,6 +593,17 @@ class DownloadManager(private val context: Context) {
         }
 
         record
+    }
+
+    private fun downloadYouTubeStreamWithFfmpeg(audioUrl: String, tempFile: File) {
+        val headers =
+            "User-Agent: $YOUTUBE_USER_AGENT\r\nReferer: https://www.youtube.com/\r\n"
+        val session = com.arthenica.ffmpegkit.FFmpegKit.execute(
+            "-y -headers \"$headers\" -i \"$audioUrl\" -c copy \"${tempFile.absolutePath}\""
+        )
+        if (!com.arthenica.ffmpegkit.ReturnCode.isSuccess(session.returnCode)) {
+            throw Exception("FFmpeg failed to download YouTube stream: ${session.failStackTrace}")
+        }
     }
 
 
