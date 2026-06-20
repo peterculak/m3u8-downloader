@@ -1,5 +1,8 @@
 package com.ta3.downloader.ui
 
+import android.widget.Toast
+import kotlinx.coroutines.launch
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -37,6 +40,7 @@ import com.ta3.downloader.*
 fun DownloaderApp(viewModel: MainViewModel) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -153,6 +157,16 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onAutoDownloadToggle = { viewModel.setAutoDownloadEnabled(it) },
                 onAutoDeleteToggle = { viewModel.setAutoDeleteEnabled(it) },
                 onAutoDeleteDaysChange = { viewModel.setAutoDeleteDays(it) },
+                onManualCleanup = {
+                    scope.launch {
+                        val count = viewModel.runManualCleanup()
+                        if (count > 0) {
+                            Toast.makeText(context, "Vymazaných epizód: $count", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Nenašli sa žiadne epizódy staršie ako ${state.autoDeleteDays} dní", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                },
                 onWifiOnlyToggle = { viewModel.setWifiOnly(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
                 onStvrShowToggle = { name, enabled -> viewModel.setStvrShowEnabled(name, enabled) },
@@ -862,6 +876,7 @@ fun SettingsTab(
     onAutoDownloadToggle: (Boolean) -> Unit,
     onAutoDeleteToggle: (Boolean) -> Unit,
     onAutoDeleteDaysChange: (Int) -> Unit,
+    onManualCleanup: () -> Unit,
     onWifiOnlyToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
     onStvrShowToggle: (String, Boolean) -> Unit,
@@ -1001,9 +1016,11 @@ fun SettingsTab(
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                             Text("Vymazať po X dňoch", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                             Spacer(Modifier.height(10.dp))
-                            Row(
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 AppSettings.AUTO_DELETE_DAYS_OPTIONS.forEach { days ->
                                     val selected = days == state.autoDeleteDays
@@ -1023,6 +1040,16 @@ fun SettingsTab(
                                         )
                                     )
                                 }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = onManualCleanup,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Spustiť vymazanie hneď", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

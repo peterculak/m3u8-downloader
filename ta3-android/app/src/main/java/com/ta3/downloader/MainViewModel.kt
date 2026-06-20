@@ -290,6 +290,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(autoDeleteDays = days) }
     }
 
+    suspend fun runManualCleanup(): Int {
+        val count = downloadManager.cleanupOldDownloads(_state.value.autoDeleteDays)
+        if (count > 0) {
+            loadRegistry() // Refresh UI after cleanup
+        }
+        return count
+    }
+
     fun setShowEnabled(showName: String, enabled: Boolean) {
         settings.setShowEnabled(showName, enabled)
         _state.update { it.copy(showEnabledMap = it.showEnabledMap + (showName to enabled)) }

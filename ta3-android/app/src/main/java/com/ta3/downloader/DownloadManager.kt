@@ -114,7 +114,7 @@ class DownloadManager(private val context: Context) {
         }
     }
 
-    suspend fun cleanupOldDownloads(days: Int) = withContext(Dispatchers.IO) {
+    suspend fun cleanupOldDownloads(days: Int): Int = withContext(Dispatchers.IO) {
         val cutoffMs = System.currentTimeMillis() - (days * 24L * 60L * 60L * 1000L)
         registryMutex.withLock {
             val registry = loadRegistryInternal().toMutableList()
@@ -124,7 +124,7 @@ class DownloadManager(private val context: Context) {
                 val timeToCompare = if (entry.downloadedAt > 0) entry.downloadedAt else file.lastModified()
                 timeToCompare in 1..<cutoffMs
             }
-            if (toRemove.isEmpty()) return@withLock
+            if (toRemove.isEmpty()) return@withLock 0
             
             Log.d(TAG, "Cleaning up ${toRemove.size} old downloads older than $days days")
             toRemove.forEach { entry ->
@@ -132,6 +132,7 @@ class DownloadManager(private val context: Context) {
                 registry.remove(entry)
             }
             saveRegistryInternal(registry)
+            toRemove.size
         }
     }
 
