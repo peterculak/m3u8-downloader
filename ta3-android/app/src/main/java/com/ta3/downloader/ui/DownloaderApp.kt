@@ -151,6 +151,8 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 state = state,
                 onIntervalChange = { viewModel.setSyncInterval(it) },
                 onAutoDownloadToggle = { viewModel.setAutoDownloadEnabled(it) },
+                onAutoDeleteToggle = { viewModel.setAutoDeleteEnabled(it) },
+                onAutoDeleteDaysChange = { viewModel.setAutoDeleteDays(it) },
                 onWifiOnlyToggle = { viewModel.setWifiOnly(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
                 onStvrShowToggle = { name, enabled -> viewModel.setStvrShowEnabled(name, enabled) },
@@ -858,6 +860,8 @@ fun SettingsTab(
     state: UiState,
     onIntervalChange: (Int) -> Unit,
     onAutoDownloadToggle: (Boolean) -> Unit,
+    onAutoDeleteToggle: (Boolean) -> Unit,
+    onAutoDeleteDaysChange: (Int) -> Unit,
     onWifiOnlyToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
     onStvrShowToggle: (String, Boolean) -> Unit,
@@ -962,6 +966,65 @@ fun SettingsTab(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
+                    }
+                }
+            }
+        }
+
+        // Storage management
+        item {
+            SettingSection(title = "Správa úložiska") {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Automatické vymazávanie starých epizód", color = MaterialTheme.colorScheme.onBackground,
+                                fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("Pravidelne odstraňovať staré epizódy zo zariadenia",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        Switch(
+                            checked = state.autoDeleteEnabled,
+                            onCheckedChange = onAutoDeleteToggle,
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                        )
+                    }
+                    
+                    if (state.autoDeleteEnabled) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text("Vymazať po X dňoch", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                AppSettings.AUTO_DELETE_DAYS_OPTIONS.forEach { days ->
+                                    val selected = days == state.autoDeleteDays
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { onAutoDeleteDaysChange(days) },
+                                        label = {
+                                            Text(
+                                                "$days dní",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                            selectedLabelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

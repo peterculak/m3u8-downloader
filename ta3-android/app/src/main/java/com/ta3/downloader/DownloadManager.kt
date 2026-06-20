@@ -114,6 +114,28 @@ class DownloadManager(private val context: Context) {
         }
     }
 
+    suspend fun cleanupOldDownloads(days: Int) = withContext(Dispatchers.IO) {
+        val cutoffMs = System.currentTimeMillis() - (days * 24L * 60L * 60L * 1000L)
+        registryMutex.withLock {
+            val registry = loadRegistryInternal().toMutableList()
+            val toRemove = registry.filter { entry ->
+                val file = File(entry.localPath)
+                if (!file.exists()) return@filter true // Cleanup orphaned registry entries
+                val timeToCompare = if (entry.downloadedAt > 0) entry.downloadedAt else file.lastModified()
+                timeToCompare in 1..<cutoffMs
+            }
+            if (toRemove.isEmpty()) return@withLock
+            
+            Log.d(TAG, "Cleaning up ${toRemove.size} old downloads older than $days days")
+            toRemove.forEach { entry ->
+                deletePhysicalFile(entry.localPath)
+                registry.remove(entry)
+            }
+            saveRegistryInternal(registry)
+        }
+    }
+
+
     /** Delete every downloaded file and clear the registry. Useful for testing. */
     suspend fun clearAllDownloads() = withContext(Dispatchers.IO) {
         registryMutex.withLock {

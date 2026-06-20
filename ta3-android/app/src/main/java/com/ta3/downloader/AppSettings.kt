@@ -48,6 +48,16 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean(KEY_WIFI_ONLY, true)
         set(v) = prefs.edit { putBoolean(KEY_WIFI_ONLY, v) }
 
+    // ─── Auto-delete ────────────────────────────────────────────────────────────
+
+    var autoDeleteEnabled: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_DELETE, true)
+        set(v) = prefs.edit { putBoolean(KEY_AUTO_DELETE, v) }
+
+    var autoDeleteDays: Int
+        get() = prefs.getInt(KEY_AUTO_DELETE_DAYS, 7)
+        set(v) = prefs.edit { putInt(KEY_AUTO_DELETE_DAYS, v) }
+
     // ─── Prehraj.to credentials ────────────────────────────────────────────────
 
     var prehrajEmail: String
@@ -62,9 +72,12 @@ class AppSettings(context: Context) {
         private const val KEY_INTERVAL_HOURS = "sync_interval_hours"
         private const val KEY_AUTO_DOWNLOAD = "auto_download_enabled"
         private const val KEY_WIFI_ONLY = "wifi_only_download"
+        private const val KEY_AUTO_DELETE = "auto_delete_enabled"
+        private const val KEY_AUTO_DELETE_DAYS = "auto_delete_days"
         private const val KEY_PREHRAJ_EMAIL = "prehraj_email"
         private const val KEY_PREHRAJ_PASSWORD = "prehraj_password"
         const val DEFAULT_INTERVAL_HOURS = 1
         val INTERVAL_OPTIONS = listOf(1, 2, 3, 6, 12, 24)
+        val AUTO_DELETE_DAYS_OPTIONS = listOf(3, 7, 14, 30)
     }
 }

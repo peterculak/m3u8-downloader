@@ -31,6 +31,8 @@ data class UiState(
     val syncIntervalHours: Int = AppSettings.DEFAULT_INTERVAL_HOURS,
     val autoDownloadEnabled: Boolean = true,
     val wifiOnlyDownload: Boolean = true,
+    val autoDeleteEnabled: Boolean = true,
+    val autoDeleteDays: Int = 7,
     val showEnabledMap: Map<String, Boolean> = TA3_SHOWS.associate { it.name to true },
     val prehrajEmail: String = "",
     val prehrajPassword: String = "",
@@ -66,6 +68,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             syncIntervalHours = settings.syncIntervalHours,
             autoDownloadEnabled = settings.autoDownloadEnabled,
             wifiOnlyDownload = settings.wifiOnlyDownload,
+            autoDeleteEnabled = settings.autoDeleteEnabled,
+            autoDeleteDays = settings.autoDeleteDays,
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             ytChannelEnabledMap = YOUTUBE_CHANNELS.associate { it.name to settings.isShowEnabled(it.name) },
@@ -274,6 +278,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(autoDownloadEnabled = enabled) }
         if (enabled) AutoDownloadWorker.schedule(getApplication(), settings.syncIntervalHours)
         else AutoDownloadWorker.cancel(getApplication())
+    }
+
+    fun setAutoDeleteEnabled(enabled: Boolean) {
+        settings.autoDeleteEnabled = enabled
+        _state.update { it.copy(autoDeleteEnabled = enabled) }
+    }
+
+    fun setAutoDeleteDays(days: Int) {
+        settings.autoDeleteDays = days
+        _state.update { it.copy(autoDeleteDays = days) }
     }
 
     fun setShowEnabled(showName: String, enabled: Boolean) {

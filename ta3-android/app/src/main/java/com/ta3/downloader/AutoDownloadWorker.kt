@@ -41,6 +41,15 @@ class AutoDownloadWorker(
             return Result.success()
         }
 
+        if (settings.autoDeleteEnabled) {
+            try {
+                downloadManager.cleanupOldDownloads(settings.autoDeleteDays)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to cleanup old downloads", e)
+            }
+        }
+
+
         val enabledShows = settings.enabledShows()
         if (enabledShows.isEmpty()) {
             Log.d(TAG, "No shows enabled — skipping")
