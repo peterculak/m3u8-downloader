@@ -47,8 +47,8 @@ object Scraper {
             val date = match.groupValues[1]
             val content = match.groupValues[2]
 
-            // Extract /relacia/... link — same pattern as CLI
-            val urlMatch = Regex("""href=["'](/relacia/[^"']+)["']""", RegexOption.IGNORE_CASE)
+            // Extract /relacia/, /clanok/ or /podcast/ link
+            val urlMatch = Regex("""href=["'](/(?:relacia|clanok|podcast)/[^"']+)["']""", RegexOption.IGNORE_CASE)
                 .find(content) ?: continue
             val url = "https://www.ta3.com${urlMatch.groupValues[1]}"
 
@@ -92,19 +92,31 @@ object Scraper {
     }
 
     /**
-     * Resolve the m3u8 URL for an episode — exact same logic as CLI:
-     * 1. Fetch detail page, extract videoId
-     * 2. Fetch vod-source.js, get src template
-     * 3. Substitute videoId into template
+     * Resolve the m3u8 or mp3 stream URL for an episode.
+     * 1. Check for Transistor podcast embed (mp3).
+     * 2. Fetch detail page, extract videoId
+     * 3. Fetch vod-source.js, get src template
+     * 4. Substitute videoId into template (m3u8)
      */
     suspend fun resolveM3u8(episodeUrl: String): String = withContext(Dispatchers.IO) {
         // 1. Fetch episode detail page
         val detailHtml = get(episodeUrl)
 
+        // Check for Transistor podcast embed
+        val transistorMatch = Regex("""src=["'](https://share\.transistor\.fm/e/[^"']+)["']""").find(detailHtml)
+        if (transistorMatch != null) {
+            val embedUrl = transistorMatch.groupValues[1]
+            val embedHtml = get(embedUrl)
+            val mp3Match = Regex("""(https?://[a-zA-Z0-9./\\_-]+\.mp3)""").find(embedHtml)
+            if (mp3Match != null) {
+                return@withContext mp3Match.groupValues[1].replace("\\/", "/")
+            }
+        }
+
         // 2. Extract videoId
         val videoIdMatch = Regex(""""videoId"\s*:\s*"([^"]+)"""").find(detailHtml)
             ?: Regex("""videoId\s*:\s*'([^']+)'""").find(detailHtml)
-            ?: throw Exception("No videoId found on page: $episodeUrl")
+            ?: throw Exception("No videoId or podcast found on page: $episodeUrl")
         val videoId = videoIdMatch.groupValues[1]
 
         // 3. Fetch the livebox vod-source.js to get fresh auth token

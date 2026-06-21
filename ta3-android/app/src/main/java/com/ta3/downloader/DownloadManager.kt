@@ -287,7 +287,9 @@ class DownloadManager(private val context: Context) {
             .trim()
             .replace(" ", "_")
             .take(80)
-        val fileName = "${safeTitle}.m4a"
+        val isMp3 = m3u8Url.contains(".mp3", ignoreCase = true)
+        val ext = if (isMp3) "mp3" else "m4a"
+        val fileName = "${safeTitle}.$ext"
         val outFile = File(if (isStvr) stvrDownloadDir(episode.showName) else showDownloadDir(episode.showName), fileName)
 
         if (outFile.exists()) outFile.delete()

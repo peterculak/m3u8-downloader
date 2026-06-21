@@ -158,31 +158,47 @@ async function downloadEpisode(item, task, history, saveHistory) {
       'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     });
 
-    // 2. Extract videoId
-    const videoIdMatch = detailHtml.match(/"videoId"\s*:\s*"([^"]+)"/) || detailHtml.match(/videoId\s*:\s*'([^']+)'/);
-    if (!videoIdMatch) {
-      task.status = 'Error: No video ID';
-      return;
-    }
-    const videoId = videoIdMatch[1];
+    // 2. Check for Transistor embed
+    const transistorMatch = detailHtml.match(/src=["'](https:\/\/share\.transistor\.fm\/e\/[^"']+)["']/);
+    let masterM3u8Url = null;
+    let isMp3 = false;
 
-    // 3. Fetch VOD source template
-    const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2/vod-source.js', {
-      'Referer': ep.url,
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    });
-
-    const srcMatch = jsSource.match(/"src"\s*:\s*"([^"]+)"/);
-    if (!srcMatch) {
-      task.status = 'Error: Livebox rejected';
-      return;
+    if (transistorMatch) {
+      const embedHtml = await fetchText(transistorMatch[1]);
+      const mp3Match = embedHtml.match(/(https?:\/\/[a-zA-Z0-9.\/\\_-]+\.mp3)/);
+      if (mp3Match) {
+        masterM3u8Url = mp3Match[1].replace(/\\\//g, '/');
+        isMp3 = true;
+      }
     }
 
-    const masterM3u8Url = 'https:' + srcMatch[1].replace('{0}', videoId);
+    if (!masterM3u8Url) {
+      const videoIdMatch = detailHtml.match(/"videoId"\s*:\s*"([^"]+)"/) || detailHtml.match(/videoId\s*:\s*'([^']+)'/);
+      if (!videoIdMatch) {
+        task.status = 'Error: No video ID';
+        return;
+      }
+      const videoId = videoIdMatch[1];
+
+      // 3. Fetch VOD source template
+      const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2/vod-source.js', {
+        'Referer': ep.url,
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      });
+
+      const srcMatch = jsSource.match(/"src"\s*:\s*"([^"]+)"/);
+      if (!srcMatch) {
+        task.status = 'Error: Livebox rejected';
+        return;
+      }
+
+      masterM3u8Url = 'https:' + srcMatch[1].replace('{0}', videoId);
+    }
 
     // 4. Parse master playlist to find the lowest-bandwidth variant (much less data to download)
     let downloadUrl = masterM3u8Url;
-    try {
+    if (!isMp3) {
+      try {
       const masterPlaylist = await fetchText(masterM3u8Url, {
         'Referer': 'https://www.ta3.com/',
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -216,6 +232,7 @@ async function downloadEpisode(item, task, history, saveHistory) {
     } catch (_) {
       // Fall back to master URL if variant parsing fails
       downloadUrl = masterM3u8Url;
+      }
     }
 
     // 5. Construct output file path
@@ -350,7 +367,7 @@ async function main() {
           const content = match[2];
 
           // Extract link relative or absolute
-          const urlMatch = content.match(/href=["'](\/relacia\/[^"']+)["']/i);
+          const urlMatch = content.match(/href=["'](\/(?:relacia|clanok|podcast)\/[^"']+)["']/i);
           if (!urlMatch) continue;
           const url = urlMatch[1].startsWith('http') 
             ? urlMatch[1] 

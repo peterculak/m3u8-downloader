@@ -52,7 +52,7 @@ object YouTubeScraper {
      * This avoids the RSS feed (which only lists uploaded clips, not live streams).
      */
     suspend fun fetchEpisodes(channel: YouTubeChannel): List<Episode> = withContext(Dispatchers.IO) {
-        val streamsUrl = "https://www.youtube.com/channel/${channel.channelId}/streams"
+        val streamsUrl = "https://www.youtube.com/channel/${channel.channelId}/${channel.tab}"
         Log.d(TAG, "Fetching streams HTML: $streamsUrl")
 
         val request = Request.Builder()
@@ -184,11 +184,15 @@ object YouTubeScraper {
 
                             var relativeTime = ""
                             try {
-                                relativeTime = renderer.getAsJsonObject("publishedTimeText")
-                                    .getAsJsonArray("runs").get(0).asJsonObject.get("text").asString
+                                relativeTime = renderer.getAsJsonObject("publishedTimeText").get("simpleText").asString
                             } catch (e: Exception) {
                                 try {
-                                    relativeTime = renderer.getAsJsonObject("publishedTimeText").get("simpleText").asString
+                                    val runs = renderer.getAsJsonObject("publishedTimeText").getAsJsonArray("runs")
+                                    var combined = ""
+                                    for (i in 0 until runs.size()) {
+                                        combined += runs.get(i).asJsonObject.get("text").asString
+                                    }
+                                    relativeTime = combined
                                 } catch (e: Exception) {}
                             }
 
@@ -218,8 +222,12 @@ object YouTubeScraper {
                                 relativeTime = renderer.getAsJsonObject("publishedTimeText").get("simpleText").asString
                             } catch (e: Exception) {
                                 try {
-                                    relativeTime = renderer.getAsJsonObject("publishedTimeText")
-                                        .getAsJsonArray("runs").get(0).asJsonObject.get("text").asString
+                                    val runs = renderer.getAsJsonObject("publishedTimeText").getAsJsonArray("runs")
+                                    var combined = ""
+                                    for (i in 0 until runs.size()) {
+                                        combined += runs.get(i).asJsonObject.get("text").asString
+                                    }
+                                    relativeTime = combined
                                 } catch (e: Exception) {}
                             }
                             

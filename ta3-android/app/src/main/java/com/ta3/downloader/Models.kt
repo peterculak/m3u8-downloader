@@ -90,6 +90,21 @@ val TA3_SHOWS = listOf(
         name = "v-politike",
         displayName = "V politike",
         url = "https://www.ta3.com/v-politike"
+    ),
+    Show(
+        name = "o-tom-potom",
+        displayName = "O tom potom",
+        url = "https://www.ta3.com/o-tom-potom"
+    ),
+    Show(
+        name = "podcast-tema-z-europarlamentu",
+        displayName = "Téma z europarlamentu",
+        url = "https://www.ta3.com/podcast-tema-z-europarlamentu"
+    ),
+    Show(
+        name = "udalosti-tyzdna",
+        displayName = "Udalosti tyzdna",
+        url = "https://www.ta3.com/udalosti-tyzdna"
     )
 )
 
@@ -124,7 +139,8 @@ data class YouTubeChannel(
     val name: String,           // internal key, e.g. "brano-zavodsky"
     val displayName: String,    // shown in UI, e.g. "Braňo Závodský"
     val channelId: String,      // YouTube channel ID starting with UC...
-    val channelUrl: String      // full YouTube channel URL
+    val channelUrl: String,     // full YouTube channel URL
+    val tab: String = "streams" // which tab to scrape: "streams" or "videos"
 )
 
 val YOUTUBE_CHANNELS = listOf(
@@ -133,5 +149,12 @@ val YOUTUBE_CHANNELS = listOf(
         displayName = "Braňo Závodský",
         channelId = "UCW1pHS8ZHpI33xnOhBvSGyQ",
         channelUrl = "https://www.youtube.com/@Bra%C5%88oZ%C3%A1vodsk%C3%BDNa%C5%BEivo"
+    ),
+    YouTubeChannel(
+        name = "bardy-a-kacer",
+        displayName = "Bárdy & Káčer",
+        channelId = "UC2kzV2zMZxLE1ywlO1e3GTg",
+        channelUrl = "https://www.youtube.com/@BardyAndKacer",
+        tab = "videos"
     )
 )
