@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
             
             if (match != null) {
                 val url = match.value
-                viewModel.downloadSharedYouTubeVideo(url)
+                viewModel.promptSharedYouTubeVideo(url)
             }
         }
     }

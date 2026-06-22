@@ -178,6 +178,37 @@ fun DownloaderApp(viewModel: MainViewModel) {
             )
         }
 
+        // Shared YouTube Video Prompt
+        state.pendingShareUrl?.let { url ->
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissSharedShare() },
+                title = { Text("Stiahnuť zdieľané video") },
+                text = { Text("V akom formáte chcete stiahnuť toto YouTube video?") },
+                confirmButton = {
+                    TextButton(onClick = { 
+                        viewModel.downloadSharedYouTubeVideo(url, isVideo = true)
+                        viewModel.dismissSharedShare()
+                    }) {
+                        Text("Video + Zvuk", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(onClick = { 
+                            viewModel.downloadSharedYouTubeVideo(url, isVideo = false)
+                            viewModel.dismissSharedShare()
+                        }) {
+                            Text("Iba zvuk", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = { viewModel.dismissSharedShare() }) {
+                            Text("Zrušiť", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            )
+        }
+
         // Active downloads floating banner
         if (state.activeDownloads.isNotEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {

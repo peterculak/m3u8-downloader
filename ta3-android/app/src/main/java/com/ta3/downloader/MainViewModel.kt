@@ -50,7 +50,8 @@ data class UiState(
     val ytLoadingEpisodes: Boolean = false,
     val ytEpisodeLoadError: String? = null,
     val ytSearchQuery: String = "",
-    val ytChannelEnabledMap: Map<String, Boolean> = YOUTUBE_CHANNELS.associate { it.name to true }
+    val ytChannelEnabledMap: Map<String, Boolean> = YOUTUBE_CHANNELS.associate { it.name to true },
+    val pendingShareUrl: String? = null
 )
 
 enum class Tab { EPISODES, STVR, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
@@ -175,7 +176,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun downloadSharedYouTubeVideo(url: String) {
+    fun promptSharedYouTubeVideo(url: String) {
+        _state.update { it.copy(pendingShareUrl = url) }
+    }
+
+    fun dismissSharedShare() {
+        _state.update { it.copy(pendingShareUrl = null) }
+    }
+
+    fun downloadSharedYouTubeVideo(url: String, isVideo: Boolean = false) {
         viewModelScope.launch {
             try {
                 // Fetch basic metadata from the URL using NewPipeExtractor
@@ -183,7 +192,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Add it to our registry and trigger the worker exactly as AutoDownloader does
                 downloadManager.markPending(episode)
-                DownloadEpisodeWorker.enqueue(getApplication(), episode)
+                DownloadEpisodeWorker.enqueue(getApplication(), episode, isVideo = isVideo)
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Failed to resolve shared video: ${e.message}")
             }

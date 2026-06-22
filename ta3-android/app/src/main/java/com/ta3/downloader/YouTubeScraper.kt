@@ -323,14 +323,17 @@ object YouTubeScraper {
             throw Exception("No audio streams found for $videoUrl")
         }
 
+        val englishStreams = audioStreams.filter { it.audioLocale?.language == "en" }
+        val targetStreams = if (englishStreams.isNotEmpty()) englishStreams else audioStreams
+
         // Prefer m4a/AAC streams for best compatibility with -c:a copy in FFmpeg
-        val bestStream: AudioStream = audioStreams
+        val bestStream: AudioStream = targetStreams
             .filter { it.format?.name?.contains("m4a", ignoreCase = true) == true ||
                       it.format?.name?.contains("aac", ignoreCase = true) == true ||
                       it.format?.mimeType?.contains("mp4", ignoreCase = true) == true }
             .maxByOrNull { it.averageBitrate }
-            ?: audioStreams.maxByOrNull { it.averageBitrate }
-            ?: audioStreams.first()
+            ?: targetStreams.maxByOrNull { it.averageBitrate }
+            ?: targetStreams.first()
 
         var url = bestStream.content ?: throw Exception("Audio stream URL is null for $videoUrl")
         
@@ -342,6 +345,63 @@ object YouTubeScraper {
 
         Log.d(TAG, "Resolved audio URL (bitrate=${bestStream.averageBitrate}): ${url.take(80)}...")
         Pair(url, durationMs)
+    }
+
+    /**
+     * Resolve the highest quality video-only stream and audio stream for a YouTube video.
+     */
+    suspend fun resolveHighestQualityVideoAndAudio(videoUrl: String): Triple<String, String, Long> = withContext(Dispatchers.IO) {
+        ensureInitialized()
+        Log.d(TAG, "Resolving highest quality video and audio URLs for: $videoUrl")
+
+        val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+        val durationMs = streamInfo.duration * 1000L
+
+        // Find best audio stream
+        val audioStreams = streamInfo.audioStreams
+        if (audioStreams.isEmpty()) {
+            throw Exception("No audio streams found for $videoUrl")
+        }
+
+        val englishStreams = audioStreams.filter { it.audioLocale?.language == "en" }
+        val targetStreams = if (englishStreams.isNotEmpty()) englishStreams else audioStreams
+
+        val bestAudio = targetStreams
+            .filter { it.format?.name?.contains("m4a", ignoreCase = true) == true ||
+                      it.format?.name?.contains("aac", ignoreCase = true) == true ||
+                      it.format?.mimeType?.contains("mp4", ignoreCase = true) == true }
+            .maxByOrNull { it.averageBitrate }
+            ?: targetStreams.maxByOrNull { it.averageBitrate }
+            ?: targetStreams.first()
+
+        var aUrl = bestAudio.content ?: throw Exception("Audio stream URL is null for $videoUrl")
+        aUrl = aUrl.replace(Regex("&range=[0-9]+-[0-9]+"), "")
+                   .replace(Regex("\\?range=[0-9]+-[0-9]+&"), "?")
+                   .replace(Regex("\\?range=[0-9]+-[0-9]+$"), "")
+
+        // Find best video stream
+        var bestVideo = streamInfo.videoOnlyStreams?.maxByOrNull { 
+            it.resolution?.replace(Regex("[^0-9]"), "")?.toIntOrNull() ?: 0 
+        }
+        if (bestVideo == null) {
+            // Fallback to muxed streams if no video-only streams exist
+            bestVideo = streamInfo.videoStreams?.maxByOrNull { 
+                it.resolution?.replace(Regex("[^0-9]"), "")?.toIntOrNull() ?: 0 
+            }
+        }
+        if (bestVideo == null) {
+            throw Exception("No video streams found for $videoUrl")
+        }
+
+        var vUrl = bestVideo.content ?: throw Exception("Video stream URL is null for $videoUrl")
+        vUrl = vUrl.replace(Regex("&range=[0-9]+-[0-9]+"), "")
+                   .replace(Regex("\\?range=[0-9]+-[0-9]+&"), "?")
+                   .replace(Regex("\\?range=[0-9]+-[0-9]+$"), "")
+
+        Log.d(TAG, "Resolved video URL (resolution=${bestVideo.resolution}): ${vUrl.take(80)}...")
+        Log.d(TAG, "Resolved audio URL (bitrate=${bestAudio.averageBitrate}): ${aUrl.take(80)}...")
+        
+        Triple(vUrl, aUrl, durationMs)
     }
 
     private fun get(url: String): String {
