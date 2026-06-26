@@ -1,0 +1,13 @@
+{
+    "folders": [
+        {
+            "path": "YoutubeDownloader"
+        },
+        {
+            "path": "../ta3-cli"
+        },
+        {
+            "path": "../ta3-android"
+        }
+    ]
+}

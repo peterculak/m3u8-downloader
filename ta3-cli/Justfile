@@ -54,3 +54,8 @@ tyzden url:
 # Usage: just stvr <url>
 stvr url:
     node stvr.js "{{url}}"
+
+# Download a single YouTube video in maximum quality (video + audio merged) bypassing bot blocks
+# Note: Edit 'chrome' to 'safari' or 'firefox' if you use a different browser.
+yt-video url:
+    yt-dlp -f "bestvideo+bestaudio/best" --merge-output-format mkv -o "downloads/youtube/%(title)s.%(ext)s" "{{url}}"
