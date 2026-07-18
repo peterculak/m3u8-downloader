@@ -49,6 +49,10 @@ class AutoDownloadWorker(
             }
         }
 
+        // Load tombstone of previously auto-deleted episode URLs.
+        // No episode in this set will ever be automatically re-downloaded.
+        val deletedUrls = try { downloadManager.loadDeletedUrls() } catch (e: Exception) { emptySet() }
+        Log.d(TAG, "Tombstone: ${deletedUrls.size} previously auto-deleted URL(s) will be skipped")
 
         val enabledShows = settings.enabledShows()
         if (enabledShows.isEmpty()) {
@@ -127,9 +131,13 @@ class AutoDownloadWorker(
                         val recent = episodes.filter { it.date == today }
 
                         for (episode in recent) {
-                            // Skip if already downloaded or currently retrying
+                            // Skip if already downloaded, currently pending retry, or previously auto-deleted
                             if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
                                 Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                                continue
+                            }
+                            if (deletedUrls.contains(episode.url)) {
+                                Log.w(TAG, "Skipping tombstoned episode (was auto-deleted): ${episode.title}")
                                 continue
                             }
 
@@ -186,6 +194,10 @@ class AutoDownloadWorker(
                             Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
                             continue
                         }
+                        if (deletedUrls.contains(episode.url)) {
+                            Log.w(TAG, "Skipping tombstoned STVR episode (was auto-deleted): ${episode.title}")
+                            continue
+                        }
 
                         val job = async {
                             try {
@@ -236,6 +248,10 @@ class AutoDownloadWorker(
                     for (episode in recent) {
                         if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
                             Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            continue
+                        }
+                        if (deletedUrls.contains(episode.url)) {
+                            Log.w(TAG, "Skipping tombstoned YouTube episode (was auto-deleted): ${episode.title}")
                             continue
                         }
 

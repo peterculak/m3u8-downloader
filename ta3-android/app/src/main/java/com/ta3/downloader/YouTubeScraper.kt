@@ -51,6 +51,15 @@ object YouTubeScraper {
      * Uses a direct HTML request and extracts video info from ytInitialData.
      * This avoids the RSS feed (which only lists uploaded clips, not live streams).
      */
+    private fun todayString(): String {
+        val cal = java.util.Calendar.getInstance()
+        return "%04d-%02d-%02d".format(
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH) + 1,
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        )
+    }
+
     suspend fun fetchEpisodes(channel: YouTubeChannel): List<Episode> = withContext(Dispatchers.IO) {
         val streamsUrl = "https://www.youtube.com/channel/${channel.channelId}/${channel.tab}"
         Log.d(TAG, "Fetching streams HTML: $streamsUrl")
@@ -66,6 +75,7 @@ object YouTubeScraper {
             if (!response.isSuccessful) throw Exception("HTTP ${response.code} fetching $streamsUrl")
             response.body?.string() ?: ""
         }
+        Log.d(TAG, "fetchEpisodes: channel=${channel.name} today=${todayString()} htmlBytes=${html.length}")
 
         val episodes = mutableListOf<Episode>()
 
@@ -110,7 +120,23 @@ object YouTubeScraper {
 
         fun resolveRelativeTime(relativeTime: String, videoId: String): String {
             if (relativeTime.isNotBlank()) return relativeTime
-            return findRelativeTimeInRawJson(jsonString ?: "", videoId)
+            val fromJson = findRelativeTimeInRawJson(jsonString ?: "", videoId)
+            if (fromJson.isNotBlank()) return fromJson
+            // Last resort: check raw JSON for LIVE_BADGE / isLive near this videoId.
+            // A brand-new stream may have no relative-time text yet but will have a live badge.
+            // Without this check parseRelativeDate("") returns "1970-01-01" and the episode is silently dropped.
+            val anchor = (jsonString ?: "").indexOf("\"videoId\":\"$videoId\"")
+            if (anchor != -1) {
+                val chunk = (jsonString ?: "").substring(anchor, minOf(anchor + 2000, (jsonString ?: "").length))
+                if (chunk.contains("LIVE_BADGE", ignoreCase = true) ||
+                    chunk.contains("\"style\":\"LIVE\"", ignoreCase = true) ||
+                    chunk.contains("\"isLive\":true", ignoreCase = true)) {
+                    Log.d(TAG, "  $videoId: no time text found but LIVE badge detected — treating as today")
+                    return "live"
+                }
+            }
+            Log.w(TAG, "  $videoId: no time found anywhere — will resolve to 1970-01-01 and be skipped")
+            return ""
         }
         
         if (jsonString != null) {
@@ -163,10 +189,12 @@ object YouTubeScraper {
                                 if (!seenIds.contains(videoId)) {
                                     seenIds.add(videoId)
                                     val resolvedTime = resolveRelativeTime(relativeTime, videoId)
+                                    val parsedDate = parseRelativeDate(resolvedTime)
+                                    Log.d(TAG, "  lockup videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate title='${title.take(60)}'")
                                     episodes.add(
                                         Episode(
                                             title = title,
-                                            date = parseRelativeDate(resolvedTime),
+                                            date = parsedDate,
                                             time = "",
                                             url = "https://www.youtube.com/watch?v=$videoId",
                                             showName = channel.name
@@ -199,10 +227,12 @@ object YouTubeScraper {
                             if (videoId.isNotEmpty() && title.isNotEmpty() && !seenIds.contains(videoId)) {
                                 seenIds.add(videoId)
                                 val resolvedTime = resolveRelativeTime(relativeTime, videoId)
+                                val parsedDate = parseRelativeDate(resolvedTime)
+                                Log.d(TAG, "  videoWithContext videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate title='${title.take(60)}'")
                                 episodes.add(
                                     Episode(
                                         title = title,
-                                        date = parseRelativeDate(resolvedTime),
+                                        date = parsedDate,
                                         time = "",
                                         url = "https://www.youtube.com/watch?v=$videoId",
                                         showName = channel.name
@@ -234,10 +264,12 @@ object YouTubeScraper {
                             if (videoId.isNotEmpty() && title.isNotEmpty() && !seenIds.contains(videoId)) {
                                 seenIds.add(videoId)
                                 val resolvedTime = resolveRelativeTime(relativeTime, videoId)
+                                val parsedDate = parseRelativeDate(resolvedTime)
+                                Log.d(TAG, "  videoRenderer videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate title='${title.take(60)}'")
                                 episodes.add(
                                     Episode(
                                         title = title,
-                                        date = parseRelativeDate(resolvedTime),
+                                        date = parsedDate,
                                         time = "",
                                         url = "https://www.youtube.com/watch?v=$videoId",
                                         showName = channel.name
@@ -251,10 +283,15 @@ object YouTubeScraper {
                 }
             }
         } else {
-            Log.w(TAG, "ytInitialData not found on streams page")
+            Log.w(TAG, "ytInitialData not found on streams page — channel=${channel.name}")
         }
 
-        Log.d(TAG, "Found ${episodes.size} episodes for ${channel.displayName}")
+        val todayCount = episodes.count { it.date == todayString() }
+        Log.d(TAG, "fetchEpisodes done: channel=${channel.name} total=${episodes.size} matchToday=$todayCount today=${todayString()}")
+        if (todayCount == 0 && episodes.isNotEmpty()) {
+            val mostRecent = episodes.map { it.date }.filter { it != "1970-01-01" }.maxOrNull() ?: "none"
+            Log.w(TAG, "  No episodes match today — most recent date is $mostRecent")
+        }
         episodes
     }
 
@@ -286,7 +323,14 @@ object YouTubeScraper {
         }
     }
 
-    /** Regex fallback: locate published-time text near a video ID inside the raw JSON blob. */
+    /** Locate published-time text near a video ID inside the raw JSON blob.
+     *
+     * IMPORTANT: Only search for the `publishedTimeText` field — NOT a generic `"text"` field.
+     * The broad pattern previously used here matched channel names (e.g. "Braňo Závodský Naživo"),
+     * episode titles, and accessibility labels that happened to contain Slovak/English keywords
+     * ("Naživo", "rok", "mesiac", "Stream", etc.). That caused parseRelativeDate to return
+     * today's date for all episodes, triggering a mass re-download after every auto-delete.
+     */
     private fun findRelativeTimeInRawJson(rawJson: String, videoId: String): String {
         if (rawJson.isBlank()) return ""
 
@@ -294,17 +338,16 @@ object YouTubeScraper {
         if (anchor == -1) return ""
 
         val chunk = rawJson.substring(anchor, minOf(anchor + 4000, rawJson.length))
-        
-        // Try to match common YouTube time formats in both English and Slovak
-        val timePattern = Regex(""""text"\s*:\s*"([^"]*(ago|pred|hodin|minút|sekúnd|dň|týžd|mesiac|rok|Stream|Premi)[^"]*)"""", RegexOption.IGNORE_CASE)
-        val match = timePattern.find(chunk)
-        if (match != null) {
-            return match.groupValues[1]
-        }
-        
-        // Fallback for simpleText
+
+        // Pattern 1: publishedTimeText.simpleText  e.g. {"publishedTimeText":{"simpleText":"Streamed 3 weeks ago"}}
         val simpleTextPattern = Regex(""""publishedTimeText"\s*:\s*\{\s*"simpleText"\s*:\s*"([^"]+)"""")
-        return simpleTextPattern.find(chunk)?.groupValues?.get(1) ?: ""
+        simpleTextPattern.find(chunk)?.let { return it.groupValues[1] }
+
+        // Pattern 2: publishedTimeText.runs[]  e.g. {"publishedTimeText":{"runs":[{"text":"Streamed 3 weeks ago"}]}}
+        val runsPattern = Regex(""""publishedTimeText"[^}]{0,200}"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)"""")
+        runsPattern.find(chunk)?.let { return it.groupValues[1] }
+
+        return ""
     }
 
     /**

@@ -44,6 +44,15 @@ class DownloadManager(private val context: Context) {
         get() = File(context.filesDir, "pending_downloads.json")
 
     /**
+     * Persistent tombstone: URLs that were auto-deleted by cleanupOldDownloads.
+     * The auto-downloader checks this set so the same episode is never silently
+     * re-downloaded after it has been auto-wiped.
+     * Manual downloads from the UI bypass this list intentionally.
+     */
+    private val deletedUrlsFile: File
+        get() = File(context.filesDir, "deleted_episode_urls.json")
+
+    /**
      * Public Downloads folder:  /sdcard/Download/TA3/<showName>/
      * Visible to any file manager or media app on the device.
      */
@@ -119,21 +128,54 @@ class DownloadManager(private val context: Context) {
         registryMutex.withLock {
             val registry = loadRegistryInternal().toMutableList()
             val toRemove = registry.filter { entry ->
+                // Never auto-delete YouTube channel downloads.
+                // These channels publish infrequently (every few weeks); auto-deleting after
+                // 7 days would wipe the only available episode, and then the app could
+                // re-download it on the next run creating a delete-redownload loop.
+                if (YOUTUBE_CHANNELS.any { it.name == entry.showName }) {
+                    Log.d(TAG, "Auto-delete: skipping YouTube episode '${entry.title}' (keep YouTube downloads)")
+                    return@filter false
+                }
                 val file = File(entry.localPath)
                 if (!file.exists()) return@filter true // Cleanup orphaned registry entries
                 val timeToCompare = if (entry.downloadedAt > 0) entry.downloadedAt else file.lastModified()
                 timeToCompare in 1..<cutoffMs
             }
             if (toRemove.isEmpty()) return@withLock 0
-            
+
             Log.d(TAG, "Cleaning up ${toRemove.size} old downloads older than $days days")
+            val tombstone = loadDeletedUrlsInternal().toMutableSet()
             toRemove.forEach { entry ->
                 deletePhysicalFile(entry.localPath)
                 registry.remove(entry)
+                tombstone.add(entry.episodeUrl)   // remember forever — never auto-re-download
+                Log.d(TAG, "  deleted + tombstoned: ${entry.title} (${entry.episodeUrl.takeLast(60)})")
             }
             saveRegistryInternal(registry)
+            saveDeletedUrlsInternal(tombstone)
             toRemove.size
         }
+    }
+
+    // ─── Tombstone (auto-deleted URLs) ────────────────────────────────────────
+
+    /** Load the set of episode URLs that were previously auto-deleted. */
+    suspend fun loadDeletedUrls(): Set<String> = withContext(Dispatchers.IO) {
+        registryMutex.withLock { loadDeletedUrlsInternal() }
+    }
+
+    private fun loadDeletedUrlsInternal(): Set<String> {
+        return try {
+            if (!deletedUrlsFile.exists()) return emptySet()
+            val type = object : com.google.gson.reflect.TypeToken<Set<String>>() {}.type
+            gson.fromJson<Set<String>>(deletedUrlsFile.readText(), type) ?: emptySet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+    }
+
+    private fun saveDeletedUrlsInternal(urls: Set<String>) {
+        deletedUrlsFile.writeText(gson.toJson(urls))
     }
 
 
