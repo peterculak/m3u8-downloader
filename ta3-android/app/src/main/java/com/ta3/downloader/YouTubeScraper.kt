@@ -100,10 +100,12 @@ object YouTubeScraper {
             val text = relativeStr.lowercase()
             
             // Extract the first number found in the string
-            val num = Regex("""(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            var num = Regex("""(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            if (text.contains("predvčerom")) num = 2
             
             if (text.contains("day") || text.contains("deň") || text.contains("dňom") ||
-                text.contains("dňami") || text.contains("dní") || text.contains("dnem")) {
+                text.contains("dňami") || text.contains("dní") || text.contains("dnem") ||
+                text.contains("včera") || text.contains("predvčerom")) {
                 cal.add(java.util.Calendar.DAY_OF_YEAR, -num)
             } else if (text.contains("week") || text.contains("týždeň") || text.contains("týždňami") ||
                 text.contains("týždne") || text.contains("týždňom")) {
@@ -113,7 +115,7 @@ object YouTubeScraper {
             } else if (text.contains("year") || text.contains("rok") || text.contains("rokmi") || text.contains("roky")) {
                 cal.add(java.util.Calendar.YEAR, -num)
             } else if (text.contains("hour") || text.contains("hodin") || text.contains("minute") ||
-                text.contains("minút") || text.contains("second") || text.contains("sekund")) {
+                text.contains("minút") || text.contains("second") || text.contains("sekund") || text.contains("dnes")) {
                 // Keep as today
             } else if (text.contains("live") || text.contains("naživo") || text.contains("premiéra") ||
                 text.contains("premiere") || text.contains("streamed") || text.contains("streamované")) {
@@ -188,10 +190,16 @@ object YouTubeScraper {
                                     .getAsJsonArray("metadataRows")
                                     .get(0).asJsonObject.getAsJsonArray("metadataParts")
                                 if (parts.size() > 0) {
-                                    // The last part is always the relative publish time (e.g., "Streamed 2 days ago")
-                                    relativeTime = parts.get(parts.size() - 1).asJsonObject.getAsJsonObject("text").get("content").asString
+                                    val textObj = parts.get(parts.size() - 1).asJsonObject.getAsJsonObject("text")
+                                    relativeTime = if (textObj.has("content")) textObj.get("content").asString else textObj.get("simpleText").asString
                                 }
-                            } catch (e: Exception) {}
+                            } catch (e: Exception) {
+                                // Fallback for alternative JSON structures
+                                val match = Regex("""\"(?:accessibilityLabel|content|simpleText)\"\s*:\s*\"([^\"]*(?:ago|day|week|month|year|hodin|minút|sekund|deň|dňom|dní|dnem|týždeň|týždň|mesiac|rok|live|naživo|stream|včera|predvčerom)[^\"]*)\"""", RegexOption.IGNORE_CASE).find(lockup.toString())
+                                if (match != null) {
+                                    relativeTime = match.groupValues[1]
+                                }
+                            }
                             
                             val videoIdMatch = Regex("""/watch\?v=([^&]+)""").find(url)
                             if (videoIdMatch != null && title.isNotEmpty()) {

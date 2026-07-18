@@ -852,6 +852,14 @@ fun DownloadedFileCard(
 ) {
     var showConfirm by remember { mutableStateOf(false) }
 
+    val channelInfo = when {
+        file.showName == "prehraj" -> "Prehraj.to"
+        TA3_SHOWS.any { it.name == file.showName } -> "TA3 • ${TA3_SHOWS.find { it.name == file.showName }?.displayName}"
+        STVR_SHOWS.any { it.name == file.showName } -> "STVR • ${STVR_SHOWS.find { it.name == file.showName }?.displayName}"
+        YOUTUBE_CHANNELS.any { it.name == file.showName } -> "YouTube • ${YOUTUBE_CHANNELS.find { it.name == file.showName }?.displayName}"
+        else -> file.showName
+    }
+
     if (showConfirm) {
         AlertDialog(
             onDismissRequest = { showConfirm = false },
@@ -885,7 +893,10 @@ fun DownloadedFileCard(
                 Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.height(6.dp))
-            Text(formatFileSize(file.fileSizeBytes), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Text(channelInfo, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                Text(formatFileSize(file.fileSizeBytes), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             Spacer(Modifier.height(10.dp))

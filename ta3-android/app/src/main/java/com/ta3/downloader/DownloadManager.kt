@@ -356,7 +356,7 @@ class DownloadManager(private val context: Context) {
         kotlinx.coroutines.suspendCancellableCoroutine<Unit> { cont ->
             // Use -map_metadata -1 to discard the 1970 creation_time from the stream
             val session = com.arthenica.ffmpegkit.FFmpegKit.executeAsync(
-                "-y -i \"$m3u8Url\" -vn -c:a copy -map_metadata -1 " +
+                "-y -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -i \"$m3u8Url\" -vn -c:a copy -map_metadata -1 " +
                     "-metadata artist=\"$safeMetaArtist\" " +
                     "-metadata album=\"$safeMetaArtist\" " +
                     "-metadata title=\"$safeMetaTitle\" " +
@@ -383,6 +383,21 @@ class DownloadManager(private val context: Context) {
             )
             cont.invokeOnCancellation {
                 com.arthenica.ffmpegkit.FFmpegKit.cancel(session.sessionId)
+            }
+        }
+
+        // Verify that the output duration matches the expected duration
+        if (durationMs > 0 && outFile.exists() && outFile.length() > 0) {
+            val outputMediaInfo = com.arthenica.ffmpegkit.FFprobeKit.getMediaInformation(outFile.absolutePath)
+            val outputDurationStr = outputMediaInfo.mediaInformation?.duration
+            val outputDurationMs = (outputDurationStr?.toDoubleOrNull() ?: 0.0) * 1000.0
+
+            if (outputDurationMs > 0) {
+                val difference = durationMs - outputDurationMs
+                if (difference > 30000) {
+                    outFile.delete()
+                    throw Exception("Incomplete download: Stream duration is ${durationMs}ms but output is only ${outputDurationMs}ms (diff: ${difference}ms)")
+                }
             }
         }
 
