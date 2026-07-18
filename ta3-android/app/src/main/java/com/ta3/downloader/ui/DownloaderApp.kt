@@ -157,6 +157,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onAutoDownloadToggle = { viewModel.setAutoDownloadEnabled(it) },
                 onAutoDeleteToggle = { viewModel.setAutoDeleteEnabled(it) },
                 onAutoDeleteDaysChange = { viewModel.setAutoDeleteDays(it) },
+                onMinVideoDurationChange = { show, minutes -> viewModel.setShowMinDuration(show, minutes) },
                 onManualCleanup = {
                     scope.launch {
                         val count = viewModel.runManualCleanup()
@@ -614,9 +615,23 @@ fun EpisodeCard(
         elevation = CardDefaults.cardElevation(0.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            if (episode.date.isNotEmpty()) {
-                Text(episode.date, color = MaterialTheme.colorScheme.primary,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (episode.date.isNotEmpty()) {
+                    Text(episode.date, color = MaterialTheme.colorScheme.primary,
+                        fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                }
+                if (episode.durationSeconds > 0) {
+                    if (episode.date.isNotEmpty()) {
+                        Text(" • ", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                    val h = episode.durationSeconds / 3600
+                    val m = (episode.durationSeconds % 3600) / 60
+                    val s = episode.durationSeconds % 60
+                    val durStr = if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
+                    Text(durStr, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            if (episode.date.isNotEmpty() || episode.durationSeconds > 0) {
                 Spacer(Modifier.height(4.dp))
             }
             Text(episode.title, color = MaterialTheme.colorScheme.onBackground,
@@ -907,6 +922,7 @@ fun SettingsTab(
     onAutoDownloadToggle: (Boolean) -> Unit,
     onAutoDeleteToggle: (Boolean) -> Unit,
     onAutoDeleteDaysChange: (Int) -> Unit,
+    onMinVideoDurationChange: (String, Int) -> Unit,
     onManualCleanup: () -> Unit,
     onWifiOnlyToggle: (Boolean) -> Unit,
     onShowToggle: (String, Boolean) -> Unit,
@@ -1165,25 +1181,56 @@ fun SettingsTab(
             SettingSection(title = "YouTube kanály") {
                 Column {
                     YOUTUBE_CHANNELS.forEachIndexed { index, channel ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(channel.displayName, color = MaterialTheme.colorScheme.onBackground,
-                                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text(channel.channelUrl, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(channel.displayName, color = MaterialTheme.colorScheme.onBackground,
+                                        fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    Text(channel.channelUrl, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Switch(
+                                    checked = state.ytChannelEnabledMap[channel.name] ?: true,
+                                    onCheckedChange = { onYtChannelToggle(channel.name, it) },
+                                    enabled = state.autoDownloadEnabled,
+                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                                )
                             }
-                            Switch(
-                                checked = state.ytChannelEnabledMap[channel.name] ?: true,
-                                onCheckedChange = { onYtChannelToggle(channel.name, it) },
-                                enabled = state.autoDownloadEnabled,
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                            )
+                            if (channel.name == "portalmarker") {
+                                Spacer(Modifier.height(8.dp))
+                                Text("Minimálna dĺžka videa", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                Spacer(Modifier.height(8.dp))
+                                @OptIn(ExperimentalLayoutApi::class)
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    AppSettings.MIN_DURATION_OPTIONS.forEach { minutes ->
+                                        val selected = minutes == (state.showMinDurationMap[channel.name] ?: 0)
+                                        FilterChip(
+                                            selected = selected,
+                                            enabled = state.autoDownloadEnabled && (state.ytChannelEnabledMap[channel.name] ?: true),
+                                            onClick = { onMinVideoDurationChange(channel.name, minutes) },
+                                            label = {
+                                                Text(
+                                                    if (minutes == 0) "Všetky" else "$minutes min",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                selectedLabelColor = Color.White
+                                            )
+                                        )
+                                    }
+                                }
+                            }
                         }
                         if (index < YOUTUBE_CHANNELS.size - 1) {
                             HorizontalDivider(

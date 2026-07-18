@@ -13,7 +13,8 @@ data class Episode(
     val date: String,
     val time: String = "",   // HH:MM extracted from article_date span, empty if not available
     val url: String,       // episode page URL
-    val showName: String
+    val showName: String,
+    val durationSeconds: Int = 0
 )
 
 data class DownloadedFile(
@@ -155,6 +156,13 @@ val YOUTUBE_CHANNELS = listOf(
         displayName = "Bárdy & Káčer",
         channelId = "UC2kzV2zMZxLE1ywlO1e3GTg",
         channelUrl = "https://www.youtube.com/@BardyAndKacer",
+        tab = "videos"
+    ),
+    YouTubeChannel(
+        name = "portalmarker",
+        displayName = "Marker.sk",
+        channelId = "UC28hsAjds3mQzScBtYtkGsQ",
+        channelUrl = "https://www.youtube.com/@PortalMarker",
         tab = "videos"
     )
 )

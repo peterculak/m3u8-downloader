@@ -27,6 +27,12 @@ class AppSettings(context: Context) {
     fun setShowEnabled(showName: String, enabled: Boolean) =
         prefs.edit { putBoolean("show_enabled_$showName", enabled) }
 
+    fun getMinDurationMinutes(showName: String): Int =
+        prefs.getInt("min_duration_$showName", 0)
+
+    fun setMinDurationMinutes(showName: String, minutes: Int) =
+        prefs.edit { putInt("min_duration_$showName", minutes) }
+
     /** Returns a list of shows that are enabled for auto-download. */
     fun enabledShows(): List<Show> =
         TA3_SHOWS.filter { isShowEnabled(it.name) }
@@ -79,5 +85,6 @@ class AppSettings(context: Context) {
         const val DEFAULT_INTERVAL_HOURS = 1
         val INTERVAL_OPTIONS = listOf(1, 2, 3, 6, 12, 24)
         val AUTO_DELETE_DAYS_OPTIONS = listOf(3, 7, 14, 30)
+        val MIN_DURATION_OPTIONS = listOf(0, 5, 10, 15, 30)
     }
 }

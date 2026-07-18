@@ -51,6 +51,7 @@ data class UiState(
     val ytEpisodeLoadError: String? = null,
     val ytSearchQuery: String = "",
     val ytChannelEnabledMap: Map<String, Boolean> = YOUTUBE_CHANNELS.associate { it.name to true },
+    val showMinDurationMap: Map<String, Int> = YOUTUBE_CHANNELS.associate { it.name to 0 },
     val pendingShareUrl: String? = null
 )
 
@@ -74,6 +75,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             ytChannelEnabledMap = YOUTUBE_CHANNELS.associate { it.name to settings.isShowEnabled(it.name) },
+            showMinDurationMap = YOUTUBE_CHANNELS.associate { it.name to settings.getMinDurationMinutes(it.name) },
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword
         )
@@ -297,6 +299,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAutoDeleteDays(days: Int) {
         settings.autoDeleteDays = days
         _state.update { it.copy(autoDeleteDays = days) }
+    }
+
+    fun setShowMinDuration(showName: String, minutes: Int) {
+        settings.setMinDurationMinutes(showName, minutes)
+        _state.update {
+            it.copy(showMinDurationMap = it.showMinDurationMap.toMutableMap().apply { put(showName, minutes) })
+        }
     }
 
     suspend fun runManualCleanup(): Int {

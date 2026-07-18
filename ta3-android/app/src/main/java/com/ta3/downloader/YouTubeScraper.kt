@@ -60,6 +60,16 @@ object YouTubeScraper {
         )
     }
 
+    private fun parseDurationToSeconds(durationText: String?): Int {
+        if (durationText.isNullOrEmpty()) return 0
+        val parts = durationText.trim().split(":")
+        return when (parts.size) {
+            3 -> (parts[0].toIntOrNull() ?: 0) * 3600 + (parts[1].toIntOrNull() ?: 0) * 60 + (parts[2].toIntOrNull() ?: 0)
+            2 -> (parts[0].toIntOrNull() ?: 0) * 60 + (parts[1].toIntOrNull() ?: 0)
+            else -> 0
+        }
+    }
+
     suspend fun fetchEpisodes(channel: YouTubeChannel): List<Episode> = withContext(Dispatchers.IO) {
         val streamsUrl = "https://www.youtube.com/channel/${channel.channelId}/${channel.tab}"
         Log.d(TAG, "Fetching streams HTML: $streamsUrl")
@@ -190,14 +200,16 @@ object YouTubeScraper {
                                     seenIds.add(videoId)
                                     val resolvedTime = resolveRelativeTime(relativeTime, videoId)
                                     val parsedDate = parseRelativeDate(resolvedTime)
-                                    Log.d(TAG, "  lockup videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate title='${title.take(60)}'")
+                                    val durationSeconds = extractDurationSeconds(obj)
+                                    Log.d(TAG, "  lockup videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
                                     episodes.add(
                                         Episode(
                                             title = title,
                                             date = parsedDate,
                                             time = "",
                                             url = "https://www.youtube.com/watch?v=$videoId",
-                                            showName = channel.name
+                                            showName = channel.name,
+                                            durationSeconds = durationSeconds
                                         )
                                     )
                                 }
@@ -228,14 +240,16 @@ object YouTubeScraper {
                                 seenIds.add(videoId)
                                 val resolvedTime = resolveRelativeTime(relativeTime, videoId)
                                 val parsedDate = parseRelativeDate(resolvedTime)
-                                Log.d(TAG, "  videoWithContext videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate title='${title.take(60)}'")
+                                val durationSeconds = extractDurationSeconds(obj)
+                                Log.d(TAG, "  videoWithContext videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
                                 episodes.add(
                                     Episode(
                                         title = title,
                                         date = parsedDate,
                                         time = "",
                                         url = "https://www.youtube.com/watch?v=$videoId",
-                                        showName = channel.name
+                                        showName = channel.name,
+                                        durationSeconds = durationSeconds
                                     )
                                 )
                             }
@@ -265,14 +279,16 @@ object YouTubeScraper {
                                 seenIds.add(videoId)
                                 val resolvedTime = resolveRelativeTime(relativeTime, videoId)
                                 val parsedDate = parseRelativeDate(resolvedTime)
-                                Log.d(TAG, "  videoRenderer videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate title='${title.take(60)}'")
+                                val durationSeconds = extractDurationSeconds(obj)
+                                Log.d(TAG, "  videoRenderer videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
                                 episodes.add(
                                     Episode(
                                         title = title,
                                         date = parsedDate,
                                         time = "",
                                         url = "https://www.youtube.com/watch?v=$videoId",
-                                        showName = channel.name
+                                        showName = channel.name,
+                                        durationSeconds = durationSeconds
                                     )
                                 )
                             }
@@ -479,5 +495,31 @@ object YouTubeScraper {
             url = videoUrl,
             showName = uploader
         )
+    }
+    private fun extractDurationSeconds(obj: com.google.gson.JsonObject): Int {
+        val str = obj.toString()
+        val durationMatch = Regex("""\"(?:thumbnailOverlayTimeStatusRenderer|lengthText)\".*?\"(?:simpleText|text)\"\s*:\s*\"([0-9:]+)\"""").find(str)
+        if (durationMatch != null) {
+            return parseDurationToSeconds(durationMatch.groupValues[1])
+        }
+        val a11yMatch = Regex("""\"label\"\s*:\s*\"([^\"]+)\"""").find(str)
+        if (a11yMatch != null) {
+            return parseA11yDurationToSeconds(a11yMatch.groupValues[1])
+        }
+        return 0
+    }
+
+    private fun parseA11yDurationToSeconds(text: String): Int {
+        var total = 0
+        val hMatch = Regex("""(\d+)\s+hour""").find(text)
+        if (hMatch != null) total += hMatch.groupValues[1].toInt() * 3600
+        
+        val mMatch = Regex("""(\d+)\s+minute""").find(text)
+        if (mMatch != null) total += mMatch.groupValues[1].toInt() * 60
+        
+        val sMatch = Regex("""(\d+)\s+second""").find(text)
+        if (sMatch != null) total += sMatch.groupValues[1].toInt()
+        
+        return total
     }
 }

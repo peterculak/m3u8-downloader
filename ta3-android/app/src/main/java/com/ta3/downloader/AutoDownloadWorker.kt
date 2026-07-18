@@ -185,8 +185,17 @@ class AutoDownloadWorker(
                     Log.d(TAG, "Fetching episodes for STVR show: ${show.displayName}")
                     val episodes = StvScraper.fetchEpisodes(show, maxPages = 1)
 
-                    // Only download today's episodes
+                    val minDurationSeconds = settings.getMinDurationMinutes(show.name) * 60
+                    // Only download today's episodes that meet duration criteria
                     val recent = episodes.filter { it.date == today }
+                        .filter {
+                            if (it.durationSeconds > 0 && it.durationSeconds < minDurationSeconds) {
+                                Log.i(TAG, "Skipping short STVR video (duration ${it.durationSeconds}s < ${minDurationSeconds}s): ${it.title}")
+                                false
+                            } else {
+                                true
+                            }
+                        }
 
                     for (episode in recent) {
                         // Skip if already downloaded or currently retrying
@@ -242,8 +251,17 @@ class AutoDownloadWorker(
                     Log.d(TAG, "Fetching episodes for YouTube channel: ${channel.displayName}")
                     val episodes = YouTubeScraper.fetchEpisodes(channel)
 
-                    // Only download today's episodes
+                    val minDurationSeconds = settings.getMinDurationMinutes(channel.name) * 60
+                    // Only download today's episodes that meet duration criteria
                     val recent = episodes.filter { it.date == today }
+                        .filter {
+                            if (it.durationSeconds > 0 && it.durationSeconds < minDurationSeconds) {
+                                Log.i(TAG, "Skipping short YouTube video (duration ${it.durationSeconds}s < ${minDurationSeconds}s): ${it.title}")
+                                false
+                            } else {
+                                true
+                            }
+                        }
 
                     for (episode in recent) {
                         if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
