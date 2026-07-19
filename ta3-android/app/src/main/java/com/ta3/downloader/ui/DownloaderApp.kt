@@ -84,42 +84,46 @@ fun DownloaderApp(viewModel: MainViewModel) {
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    TabItem(
-                        icon = Icons.Outlined.PlayCircle,
-                        label = "TA3",
-                        selected = state.selectedTab == Tab.EPISODES,
-                        onClick = { viewModel.selectTab(Tab.EPISODES) }
-                    )
-                    TabItem(
-                        icon = Icons.Outlined.Tv,
-                        label = "STVR",
-                        selected = state.selectedTab == Tab.STVR,
-                        onClick = { viewModel.selectTab(Tab.STVR) }
-                    )
-                    TabItem(
-                        icon = Icons.Outlined.OndemandVideo,
-                        label = "YouTube",
-                        selected = state.selectedTab == Tab.YOUTUBE,
-                        onClick = { viewModel.selectTab(Tab.YOUTUBE) }
-                    )
-                    TabItem(
-                        icon = Icons.Outlined.FolderOpen,
-                        label = "Stiahnuté (${state.downloadedFiles.size})",
-                        selected = state.selectedTab == Tab.DOWNLOADS,
-                        onClick = { viewModel.selectTab(Tab.DOWNLOADS) }
-                    )
-                    TabItem(
-                        icon = Icons.Outlined.Movie,
-                        label = "Prehraj",
-                        selected = state.selectedTab == Tab.PREHRAJ,
-                        onClick = { viewModel.selectTab(Tab.PREHRAJ) }
-                    )
-                    TabItem(
-                        icon = Icons.Outlined.Settings,
-                        label = "Nastavenia",
-                        selected = state.selectedTab == Tab.SETTINGS,
-                        onClick = { viewModel.selectTab(Tab.SETTINGS) }
-                    )
+                    state.mainTabs.forEach { tab ->
+                        when (tab) {
+                            Tab.EPISODES -> TabItem(
+                                icon = Icons.Outlined.PlayCircle,
+                                label = "TA3",
+                                selected = state.selectedTab == Tab.EPISODES,
+                                onClick = { viewModel.selectTab(Tab.EPISODES) }
+                            )
+                            Tab.STVR -> TabItem(
+                                icon = Icons.Outlined.Tv,
+                                label = "STVR",
+                                selected = state.selectedTab == Tab.STVR,
+                                onClick = { viewModel.selectTab(Tab.STVR) }
+                            )
+                            Tab.YOUTUBE -> TabItem(
+                                icon = Icons.Outlined.OndemandVideo,
+                                label = "YouTube",
+                                selected = state.selectedTab == Tab.YOUTUBE,
+                                onClick = { viewModel.selectTab(Tab.YOUTUBE) }
+                            )
+                            Tab.DOWNLOADS -> TabItem(
+                                icon = Icons.Outlined.FolderOpen,
+                                label = "Stiahnuté (${state.downloadedFiles.size})",
+                                selected = state.selectedTab == Tab.DOWNLOADS,
+                                onClick = { viewModel.selectTab(Tab.DOWNLOADS) }
+                            )
+                            Tab.PREHRAJ -> TabItem(
+                                icon = Icons.Outlined.Movie,
+                                label = "Prehraj",
+                                selected = state.selectedTab == Tab.PREHRAJ,
+                                onClick = { viewModel.selectTab(Tab.PREHRAJ) }
+                            )
+                            Tab.SETTINGS -> TabItem(
+                                icon = Icons.Outlined.Settings,
+                                label = "Nastavenia",
+                                selected = state.selectedTab == Tab.SETTINGS,
+                                onClick = { viewModel.selectTab(Tab.SETTINGS) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -185,6 +189,12 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onRemoveCustomChannel = { name -> viewModel.removeCustomYouTubeChannel(name) },
                 onCustomChannelUrlChange = viewModel::setCustomChannelUrlInput,
                 onCustomChannelNameChange = viewModel::setCustomChannelNameInput,
+                onMoveTa3Show = viewModel::moveTa3Show,
+                onMoveStvrShow = viewModel::moveStvrShow,
+                onMoveYtChannel = viewModel::moveYtChannel,
+                onMoveSection = viewModel::moveSection,
+                onToggleSection = viewModel::toggleSection,
+                onToggleItem = viewModel::toggleItem,
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -358,7 +368,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TA3_SHOWS.forEach { show ->
+            state.ta3Shows.forEach { show ->
                 val selected = show.name == state.selectedShow.name
                 FilterChip(
                     selected = selected,
@@ -470,7 +480,7 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            STVR_SHOWS.forEach { show ->
+            state.stvrShows.forEach { show ->
                 val selected = show.name == state.selectedStvrShow.name
                 FilterChip(
                     selected = selected,
@@ -1024,570 +1034,6 @@ fun DownloadedFileCard(
 }
 
 // ─── Settings Tab ──────────────────────────────────────────────────────────────
-
-@Composable
-fun SettingsTab(
-    state: UiState,
-    onIntervalChange: (Int) -> Unit,
-    onAutoDownloadToggle: (Boolean) -> Unit,
-    onAutoDeleteToggle: (Boolean) -> Unit,
-    onAutoDeleteDaysChange: (Int) -> Unit,
-    onMinVideoDurationChange: (String, Int) -> Unit,
-    onManualCleanup: () -> Unit,
-    onWifiOnlyToggle: (Boolean) -> Unit,
-    onShowToggle: (String, Boolean) -> Unit,
-    onStvrShowToggle: (String, Boolean) -> Unit,
-    onYtChannelToggle: (String, Boolean) -> Unit,
-    onPrehrajEmailChange: (String) -> Unit,
-    onPrehrajPasswordChange: (String) -> Unit,
-    onPrehrajLogin: () -> Unit,
-    onAddCustomChannel: (String, String) -> Unit,
-    onEditCustomChannel: (String, String, String) -> Unit,
-    onRemoveCustomChannel: (String) -> Unit,
-    onCustomChannelUrlChange: (String) -> Unit,
-    onCustomChannelNameChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var showEditDialog by remember { mutableStateOf<YouTubeChannel?>(null) }
-    
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // Auto-download master toggle
-        item {
-            SettingSection(title = "Synchronizácia na pozadí") {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Automatické sťahovanie", color = MaterialTheme.colorScheme.onBackground,
-                                fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text("Automaticky sťahovať nové epizódy na pozadí",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = state.autoDownloadEnabled,
-                            onCheckedChange = onAutoDownloadToggle,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Iba cez Wi-Fi", color = MaterialTheme.colorScheme.onBackground,
-                                fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(
-                                if (state.wifiOnlyDownload)
-                                    "Sťahovať iba pri pripojení na Wi-Fi"
-                                else
-                                    "Sťahovať cez Wi-Fi aj mobilné dáta (5G/4G)",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
-                            )
-                        }
-                        Switch(
-                            checked = state.wifiOnlyDownload,
-                            onCheckedChange = onWifiOnlyToggle,
-                            enabled = state.autoDownloadEnabled,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                }
-            }
-        }
-
-        // Sync interval selector
-        item {
-            SettingSection(title = "Interval kontroly") {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text("Kontrolovať každých N hodín", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AppSettings.INTERVAL_OPTIONS.forEach { hours ->
-                            val selected = hours == state.syncIntervalHours
-                            FilterChip(
-                                selected = selected,
-                                enabled = state.autoDownloadEnabled,
-                                onClick = { onIntervalChange(hours) },
-                                label = {
-                                    Text(
-                                        if (hours == 1) "1h" else "${hours}h",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                    selectedLabelColor = Color.White
-                                )
-                            )
-                        }
-                    }
-                    if (state.autoDownloadEnabled) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Aktuálne nastavené na každú ${state.syncIntervalHours}. hodinu",
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-        }
-
-        // Storage management
-        item {
-            SettingSection(title = "Správa úložiska") {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Automatické vymazávanie starých epizód", color = MaterialTheme.colorScheme.onBackground,
-                                fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text("Pravidelne odstraňovať staré epizódy zo zariadenia",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                        }
-                        Switch(
-                            checked = state.autoDeleteEnabled,
-                            onCheckedChange = onAutoDeleteToggle,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                        )
-                    }
-                    
-                    if (state.autoDeleteEnabled) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        )
-                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                            Text("Vymazať po X dňoch", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                            Spacer(Modifier.height(10.dp))
-                            @OptIn(ExperimentalLayoutApi::class)
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                AppSettings.AUTO_DELETE_DAYS_OPTIONS.forEach { days ->
-                                    val selected = days == state.autoDeleteDays
-                                    FilterChip(
-                                        selected = selected,
-                                        onClick = { onAutoDeleteDaysChange(days) },
-                                        label = {
-                                            Text(
-                                                "$days dní",
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                            selectedLabelColor = Color.White
-                                        )
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            OutlinedButton(
-                                onClick = onManualCleanup,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Spustiť vymazanie hneď", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Per-show toggles
-        item {
-            SettingSection(title = "Relácie na sťahovanie") {
-                Column {
-                    TA3_SHOWS.forEachIndexed { index, show ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(show.displayName, color = MaterialTheme.colorScheme.onBackground,
-                                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text(show.url, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            Switch(
-                                checked = state.showEnabledMap[show.name] ?: true,
-                                onCheckedChange = { onShowToggle(show.name, it) },
-                                enabled = state.autoDownloadEnabled,
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                            )
-                        }
-                        if (index < TA3_SHOWS.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // STVR Per-show toggles
-        item {
-            SettingSection(title = "STVR relácie na sťahovanie") {
-                Column {
-                    STVR_SHOWS.forEachIndexed { index, show ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(show.displayName, color = MaterialTheme.colorScheme.onBackground,
-                                    fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text(show.url, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            Switch(
-                                checked = state.stvrShowEnabledMap[show.name] ?: true,
-                                onCheckedChange = { onStvrShowToggle(show.name, it) },
-                                enabled = state.autoDownloadEnabled,
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                            )
-                        }
-                        if (index < STVR_SHOWS.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // YouTube channel toggles
-        item {
-            SettingSection(title = "YouTube kanály") {
-                Column {
-                    state.allYtChannels.forEachIndexed { index, channel ->
-                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(channel.displayName, color = MaterialTheme.colorScheme.onBackground,
-                                        fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                    Text(channel.channelUrl, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Switch(
-                                        checked = state.ytChannelEnabledMap[channel.name] ?: true,
-                                        onCheckedChange = { onYtChannelToggle(channel.name, it) },
-                                        enabled = state.autoDownloadEnabled,
-                                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
-                                    )
-                                    if (YOUTUBE_CHANNELS.none { it.name == channel.name }) {
-                                        IconButton(onClick = { showEditDialog = channel }) {
-                                            Icon(Icons.Default.Edit, contentDescription = "Edit channel", tint = MaterialTheme.colorScheme.primary)
-                                        }
-                                        IconButton(onClick = { onRemoveCustomChannel(channel.name) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete channel", tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                            var expanded by remember(channel.name) { mutableStateOf(false) }
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { expanded = !expanded }
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Minimálna dĺžka videa", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                                Icon(
-                                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (expanded) "Zbaliť" else "Rozbaliť",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (expanded) {
-                                Spacer(Modifier.height(8.dp))
-                                @OptIn(ExperimentalLayoutApi::class)
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    AppSettings.MIN_DURATION_OPTIONS.forEach { minutes ->
-                                        val selected = minutes == (state.showMinDurationMap[channel.name] ?: 0)
-                                        FilterChip(
-                                            selected = selected,
-                                            enabled = state.autoDownloadEnabled && (state.ytChannelEnabledMap[channel.name] ?: true),
-                                            onClick = { onMinVideoDurationChange(channel.name, minutes) },
-                                            label = {
-                                                Text(
-                                                    if (minutes == 0) "Všetky" else "$minutes min",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                                selectedLabelColor = Color.White
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        if (index < state.allYtChannels.size - 1) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add Custom YouTube Channel
-        item {
-            SettingSection(title = "Pridať vlastný YouTube kanál") {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    OutlinedTextField(
-                        value = state.customChannelUrlInput,
-                        onValueChange = onCustomChannelUrlChange,
-                        label = { Text("URL kanálu (napr. https://youtube.com/@kanál)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = state.customChannelNameInput,
-                        onValueChange = onCustomChannelNameChange,
-                        label = { Text("Zobrazovaný názov") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = { onAddCustomChannel(state.customChannelUrlInput, state.customChannelNameInput) },
-                        enabled = state.customChannelUrlInput.isNotBlank() && state.customChannelNameInput.isNotBlank(),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("Pridať kanál")
-                    }
-                }
-            }
-        }
-
-        // Prehraj.to account
-        item {
-            var showPass by remember { mutableStateOf(false) }
-            SettingSection(title = "Prehraj.to Účet") {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
-
-                    // Email field
-                    OutlinedTextField(
-                        value = state.prehrajEmail,
-                        onValueChange = onPrehrajEmailChange,
-                        label = { Text("E-mail", fontSize = 13.sp) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                        )
-                    )
-
-                    // Password field
-                    OutlinedTextField(
-                        value = state.prehrajPassword,
-                        onValueChange = onPrehrajPasswordChange,
-                        label = { Text("Heslo", fontSize = 13.sp) },
-                        singleLine = true,
-                        visualTransformation = if (showPass) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { showPass = !showPass }) {
-                                Icon(
-                                    if (showPass) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                    contentDescription = if (showPass) "Skryť" else "Zobraziť"
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { onPrehrajLogin() }),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                        )
-                    )
-
-                    // Login status + button
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        when (state.prehrajLoginStatus) {
-                            PrehrajLoginStatus.LOGGED_IN ->
-                                Row(verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Icon(Icons.Default.CheckCircle, null,
-                                        tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
-                                    Text("Prihlásený", color = MaterialTheme.colorScheme.secondary,
-                                        fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            PrehrajLoginStatus.LOGGING_IN ->
-                                Row(verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    CircularProgressIndicator(modifier = Modifier.size(14.dp),
-                                        strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-                                    Text("Prihlasujem…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                                }
-                            PrehrajLoginStatus.FAILED ->
-                                Text(state.prehrajLoginError ?: "Prihlásenie zlyhalo",
-                                    color = MaterialTheme.colorScheme.error, fontSize = 11.sp,
-                                    modifier = Modifier.weight(1f))
-                            else -> Spacer(Modifier.weight(1f))
-                        }
-                        Button(
-                            onClick = onPrehrajLogin,
-                            enabled = state.prehrajLoginStatus != PrehrajLoginStatus.LOGGING_IN,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Text("Prihlásiť sa", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Info box
-        item {
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
-            ) {
-                Row(modifier = Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                    Text(
-                        "Synchronizácia na pozadí kontroluje dnešné a včerajšie epizódy. " +
-                        "Stiahnuté súbory je možné otvoriť pomocou VLC, MX Player alebo inej mediálnej aplikácie.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        lineHeight = 18.sp
-                    )
-                }
-            }
-        }
-    }
-
-    if (showEditDialog != null) {
-        val channelToEdit = showEditDialog!!
-        var editUrl by remember(channelToEdit) { mutableStateOf(channelToEdit.channelUrl) }
-        var editName by remember(channelToEdit) { mutableStateOf(channelToEdit.displayName) }
-
-        AlertDialog(
-            onDismissRequest = { showEditDialog = null },
-            title = { Text("Upraviť kanál") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = editUrl,
-                        onValueChange = { editUrl = it },
-                        label = { Text("URL kanálu") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Zobrazovaný názov") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onEditCustomChannel(channelToEdit.name, editUrl, editName)
-                        showEditDialog = null
-                    },
-                    enabled = editUrl.isNotBlank() && editName.isNotBlank()
-                ) { Text("Uložiť") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditDialog = null }) { Text("Zrušiť") }
-            }
-        )
-    }
-}
-
-@Composable
-private fun SettingSection(title: String, content: @Composable () -> Unit) {
-    Column {
-        Text(
-            text = title.uppercase(),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            content()
-        }
-    }
-}
 
 // ─── Active Downloads Banner ───────────────────────────────────────────────────
 

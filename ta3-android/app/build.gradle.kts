@@ -70,6 +70,7 @@ dependencies {
     implementation(libs.ffmpeg.kit.https)
     implementation(libs.androidx.appcompat)
     implementation(libs.newpipe.extractor)
+    implementation(libs.calvin.reorderable)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

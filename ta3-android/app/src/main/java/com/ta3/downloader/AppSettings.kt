@@ -43,6 +43,36 @@ class AppSettings(context: Context) {
     fun enabledYouTubeChannels(): List<YouTubeChannel> =
         CustomChannelManager.getAllYouTubeChannels().filter { isShowEnabled(it.name) }
 
+    // ─── Reordering ──────────────────────────────────────────────────────────────
+
+    var mainTabOrder: List<String>
+        get() = prefs.getString("main_tab_order", null)?.split(",")?.filter { it.isNotBlank() } ?: listOf("EPISODES", "STVR", "YOUTUBE", "DOWNLOADS", "PREHRAJ", "SETTINGS")
+        set(v) = prefs.edit { putString("main_tab_order", v.joinToString(",")) }
+
+    var ta3ShowOrder: List<String>
+        get() = prefs.getString("ta3_show_order", null)?.split(",")?.filter { it.isNotBlank() } ?: TA3_SHOWS.map { it.name }
+        set(v) = prefs.edit { putString("ta3_show_order", v.joinToString(",")) }
+
+    var stvrShowOrder: List<String>
+        get() = prefs.getString("stvr_show_order", null)?.split(",")?.filter { it.isNotBlank() } ?: STVR_SHOWS.map { it.name }
+        set(v) = prefs.edit { putString("stvr_show_order", v.joinToString(",")) }
+
+    var ytChannelOrder: List<String>
+        get() = prefs.getString("yt_channel_order", null)?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+        set(v) = prefs.edit { putString("yt_channel_order", v.joinToString(",")) }
+
+    var sectionOrder: List<String>
+        get() {
+            val saved = prefs.getString("section_order", null)?.split(",")?.filter { it.isNotBlank() }
+            if (saved != null) {
+                val order = saved.filter { it != "tabs" }.toMutableList()
+                if (!order.contains("prehraj")) order.add("prehraj")
+                return order
+            }
+            return listOf("ta3", "stvr", "yt", "prehraj")
+        }
+        set(v) = prefs.edit { putString("section_order", v.joinToString(",")) }
+
     // ─── First-run flag ─────────────────────────────────────────────────────────
 
     var autoDownloadEnabled: Boolean

@@ -91,7 +91,7 @@ class MainActivity : ComponentActivity() {
                     name = Regex("""@([a-zA-Z0-9_-]+)""").find(url)?.groupValues?.get(1) ?: "Neznámy kanál"
                 }
                 
-                viewModel.preloadSharedChannel(url, name)
+                viewModel.setPendingSharedChannel(url, name)
             }
         }
     }

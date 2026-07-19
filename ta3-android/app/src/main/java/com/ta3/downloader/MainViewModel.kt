@@ -56,7 +56,14 @@ data class UiState(
     val pendingShareUrl: String? = null,
     val customChannelUrlInput: String = "",
     val customChannelNameInput: String = "",
-    val pendingSharedChannel: Pair<String, String>? = null  // url to displayName
+    val pendingSharedChannel: Pair<String, String>? = null,  // url to displayName
+    // Ordering
+    val mainTabs: List<Tab> = listOf(Tab.EPISODES, Tab.STVR, Tab.YOUTUBE, Tab.DOWNLOADS, Tab.PREHRAJ, Tab.SETTINGS),
+    val sectionOrder: List<String> = listOf("tabs", "ta3", "stvr", "yt"),
+    val ta3Shows: List<Show> = TA3_SHOWS,
+    val stvrShows: List<Show> = STVR_SHOWS,
+    val expandedSections: Set<String> = setOf("ta3", "stvr", "yt", "tabs"),
+    val expandedItems: Set<String> = emptySet()
 )
 
 enum class Tab { EPISODES, STVR, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
@@ -80,8 +87,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             ytChannelEnabledMap = CustomChannelManager.getAllYouTubeChannels().associate { it.name to settings.isShowEnabled(it.name) },
             showMinDurationMap = CustomChannelManager.getAllYouTubeChannels().associate { it.name to settings.getMinDurationMinutes(it.name) },
-            allYtChannels = CustomChannelManager.getAllYouTubeChannels(),
-            selectedYtChannel = CustomChannelManager.getAllYouTubeChannels().firstOrNull(),
+            mainTabs = getSortedMainTabs(settings),
+            ta3Shows = getSortedTa3Shows(settings),
+            stvrShows = getSortedStvrShows(settings),
+            allYtChannels = getSortedYtChannels(settings),
+            selectedYtChannel = getSortedYtChannels(settings).firstOrNull(),
+            sectionOrder = settings.sectionOrder,
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword
         )
@@ -91,8 +102,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadRegistry()
         observeActiveDownloads()
-        fetchEpisodes(TA3_SHOWS[0])
-        fetchStvrEpisodes(STVR_SHOWS[0])
+        fetchEpisodes(_state.value.ta3Shows.firstOrNull() ?: TA3_SHOWS[0])
+        fetchStvrEpisodes(_state.value.stvrShows.firstOrNull() ?: STVR_SHOWS[0])
         _state.value.selectedYtChannel?.let { fetchYtEpisodes(it) }
         // Auto-login to prehraj.to on startup if credentials are saved
         if (settings.prehrajEmail.isNotEmpty() && settings.prehrajPassword.isNotEmpty()) {
@@ -489,8 +500,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setCustomChannelUrlInput(url: String) = _state.update { it.copy(customChannelUrlInput = url) }
     fun setCustomChannelNameInput(name: String) = _state.update { it.copy(customChannelNameInput = name) }
     
-    fun preloadSharedChannel(url: String, name: String) {
+    fun setPendingSharedChannel(url: String, name: String) {
         _state.update { it.copy(pendingSharedChannel = Pair(url, name)) }
+    }
+
+    fun toggleSection(sectionId: String) {
+        _state.update {
+            val newSet = if (it.expandedSections.contains(sectionId)) {
+                it.expandedSections - sectionId
+            } else {
+                it.expandedSections + sectionId
+            }
+            it.copy(expandedSections = newSet)
+        }
+    }
+
+    fun toggleItem(itemId: String) {
+        _state.update {
+            val newSet = if (it.expandedItems.contains(itemId)) {
+                it.expandedItems - itemId
+            } else {
+                it.expandedItems + itemId
+            }
+            it.copy(expandedItems = newSet)
+        }
     }
 
     fun dismissSharedChannel() {
@@ -503,14 +536,91 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun refreshYouTubeChannels() {
-        val all = CustomChannelManager.getAllYouTubeChannels()
+        val channels = getSortedYtChannels(settings)
         _state.update { state ->
             state.copy(
-                allYtChannels = all,
-                selectedYtChannel = if (all.none { it.name == state.selectedYtChannel?.name }) all.firstOrNull() else state.selectedYtChannel,
-                ytChannelEnabledMap = all.associate { it.name to settings.isShowEnabled(it.name) },
-                showMinDurationMap = all.associate { it.name to settings.getMinDurationMinutes(it.name) }
+                allYtChannels = channels,
+                selectedYtChannel = if (channels.none { it.name == state.selectedYtChannel?.name }) channels.firstOrNull() else state.selectedYtChannel,
+                ytChannelEnabledMap = channels.associate { it.name to settings.isShowEnabled(it.name) },
+                showMinDurationMap = channels.associate { it.name to settings.getMinDurationMinutes(it.name) }
             )
+        }
+    }
+
+    // ─── Reordering ────────────────────────────────────────────────────────────
+
+    fun moveMainTab(fromIndex: Int, toIndex: Int) {
+        if (fromIndex !in _state.value.mainTabs.indices || toIndex !in _state.value.mainTabs.indices) return
+        val tabs = _state.value.mainTabs.toMutableList()
+        val item = tabs.removeAt(fromIndex)
+        tabs.add(toIndex, item)
+        settings.mainTabOrder = tabs.map { it.name }
+        _state.update { it.copy(mainTabs = tabs) }
+    }
+
+    fun moveSection(fromIndex: Int, toIndex: Int) {
+        if (fromIndex !in _state.value.sectionOrder.indices || toIndex !in _state.value.sectionOrder.indices) return
+        val sections = _state.value.sectionOrder.toMutableList()
+        val item = sections.removeAt(fromIndex)
+        sections.add(toIndex, item)
+        settings.sectionOrder = sections
+        _state.update { it.copy(sectionOrder = sections, mainTabs = getSortedMainTabs(settings)) }
+    }
+
+    fun moveTa3Show(fromIndex: Int, toIndex: Int) {
+        val shows = _state.value.ta3Shows.toMutableList()
+        val item = shows.removeAt(fromIndex)
+        shows.add(toIndex, item)
+        settings.ta3ShowOrder = shows.map { it.name }
+        _state.update { it.copy(ta3Shows = shows) }
+    }
+
+    fun moveStvrShow(fromIndex: Int, toIndex: Int) {
+        val shows = _state.value.stvrShows.toMutableList()
+        val item = shows.removeAt(fromIndex)
+        shows.add(toIndex, item)
+        settings.stvrShowOrder = shows.map { it.name }
+        _state.update { it.copy(stvrShows = shows) }
+    }
+
+    fun moveYtChannel(fromIndex: Int, toIndex: Int) {
+        val channels = _state.value.allYtChannels.toMutableList()
+        val item = channels.removeAt(fromIndex)
+        channels.add(toIndex, item)
+        settings.ytChannelOrder = channels.map { it.name }
+        _state.update { it.copy(allYtChannels = channels) }
+    }
+
+    companion object {
+        private fun getSortedTa3Shows(settings: AppSettings): List<Show> {
+            val order = settings.ta3ShowOrder
+            return TA3_SHOWS.sortedBy { order.indexOf(it.name).takeIf { idx -> idx >= 0 } ?: Int.MAX_VALUE }
+        }
+
+        private fun getSortedStvrShows(settings: AppSettings): List<Show> {
+            val order = settings.stvrShowOrder
+            return STVR_SHOWS.sortedBy { order.indexOf(it.name).takeIf { idx -> idx >= 0 } ?: Int.MAX_VALUE }
+        }
+
+        private fun getSortedYtChannels(settings: AppSettings): List<YouTubeChannel> {
+            val order = settings.ytChannelOrder
+            return CustomChannelManager.getAllYouTubeChannels()
+                .sortedBy { order.indexOf(it.name).takeIf { idx -> idx >= 0 } ?: Int.MAX_VALUE }
+        }
+
+        private fun getSortedMainTabs(settings: AppSettings): List<Tab> {
+            val order = settings.sectionOrder
+            val dynamicTabs = order.mapNotNull {
+                when (it) {
+                    "ta3" -> Tab.EPISODES
+                    "stvr" -> Tab.STVR
+                    "yt" -> Tab.YOUTUBE
+                    "prehraj" -> Tab.PREHRAJ
+                    else -> null
+                }
+            }
+            val fixedTabs = listOf(Tab.DOWNLOADS, Tab.SETTINGS)
+            return dynamicTabs + fixedTabs.filter { !dynamicTabs.contains(it) }
         }
     }
 
