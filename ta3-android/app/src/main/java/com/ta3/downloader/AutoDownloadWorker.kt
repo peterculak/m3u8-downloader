@@ -88,7 +88,7 @@ class AutoDownloadWorker(
                             downloadManager.downloadDirectMp4(episode, p.directUrl) { progress ->
                                 DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
                             }
-                        } else if (episode.url.contains("youtube.com") || episode.url.contains("youtu.be") || YOUTUBE_CHANNELS.any { it.name == episode.showName }) {
+                        } else if (episode.url.contains("youtube.com") || episode.url.contains("youtu.be") || CustomChannelManager.getAllYouTubeChannels().any { it.name == episode.showName }) {
                             downloadManager.downloadYouTubeAudio(episode) { progress ->
                                 DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
                             }

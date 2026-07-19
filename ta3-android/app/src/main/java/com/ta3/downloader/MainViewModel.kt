@@ -45,14 +45,18 @@ data class UiState(
     val prehrajLoginError: String? = null,
     val prehrajResolvedUrls: Map<String, String> = emptyMap(),
     // YouTube
-    val selectedYtChannel: YouTubeChannel = YOUTUBE_CHANNELS[0],
+    val allYtChannels: List<YouTubeChannel> = emptyList(),
+    val selectedYtChannel: YouTubeChannel? = null,
     val ytEpisodes: List<Episode> = emptyList(),
     val ytLoadingEpisodes: Boolean = false,
     val ytEpisodeLoadError: String? = null,
     val ytSearchQuery: String = "",
-    val ytChannelEnabledMap: Map<String, Boolean> = YOUTUBE_CHANNELS.associate { it.name to true },
-    val showMinDurationMap: Map<String, Int> = YOUTUBE_CHANNELS.associate { it.name to 0 },
-    val pendingShareUrl: String? = null
+    val ytChannelEnabledMap: Map<String, Boolean> = emptyMap(),
+    val showMinDurationMap: Map<String, Int> = emptyMap(),
+    val pendingShareUrl: String? = null,
+    val customChannelUrlInput: String = "",
+    val customChannelNameInput: String = "",
+    val pendingSharedChannel: Pair<String, String>? = null  // url to displayName
 )
 
 enum class Tab { EPISODES, STVR, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
@@ -74,8 +78,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             autoDeleteDays = settings.autoDeleteDays,
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
-            ytChannelEnabledMap = YOUTUBE_CHANNELS.associate { it.name to settings.isShowEnabled(it.name) },
-            showMinDurationMap = YOUTUBE_CHANNELS.associate { it.name to settings.getMinDurationMinutes(it.name) },
+            ytChannelEnabledMap = CustomChannelManager.getAllYouTubeChannels().associate { it.name to settings.isShowEnabled(it.name) },
+            showMinDurationMap = CustomChannelManager.getAllYouTubeChannels().associate { it.name to settings.getMinDurationMinutes(it.name) },
+            allYtChannels = CustomChannelManager.getAllYouTubeChannels(),
+            selectedYtChannel = CustomChannelManager.getAllYouTubeChannels().firstOrNull(),
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword
         )
@@ -87,7 +93,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeActiveDownloads()
         fetchEpisodes(TA3_SHOWS[0])
         fetchStvrEpisodes(STVR_SHOWS[0])
-        fetchYtEpisodes(YOUTUBE_CHANNELS[0])
+        _state.value.selectedYtChannel?.let { fetchYtEpisodes(it) }
         // Auto-login to prehraj.to on startup if credentials are saved
         if (settings.prehrajEmail.isNotEmpty() && settings.prehrajPassword.isNotEmpty()) {
             loginPrehraj()
@@ -406,7 +412,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         fetchYtEpisodes(channel)
     }
 
-    fun fetchYtEpisodes(channel: YouTubeChannel = _state.value.selectedYtChannel) {
+    fun fetchYtEpisodes(channel: YouTubeChannel? = _state.value.selectedYtChannel) {
+        if (channel == null) return
         viewModelScope.launch {
             _state.update { it.copy(ytLoadingEpisodes = true, ytEpisodeLoadError = null) }
             try {
@@ -433,6 +440,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setYtChannelEnabled(channelName: String, enabled: Boolean) {
         settings.setShowEnabled(channelName, enabled)
         _state.update { it.copy(ytChannelEnabledMap = it.ytChannelEnabledMap + (channelName to enabled)) }
+    }
+
+    fun setYtMinDuration(channelName: String, minutes: Int) {
+        settings.setMinDurationMinutes(channelName, minutes)
+        _state.update { it.copy(showMinDurationMap = it.showMinDurationMap + (channelName to minutes)) }
+    }
+
+    fun addCustomYouTubeChannel(channelUrl: String, displayName: String, minDurationMinutes: Int = 0) {
+        val url = channelUrl.trim()
+        if (url.isEmpty() || displayName.isBlank()) return
+        val internalName = displayName.lowercase().replace(Regex("[^a-z0-9]"), "-").replace(Regex("-+"), "-").trim('-')
+        val channel = YouTubeChannel(
+            name = internalName,
+            displayName = displayName,
+            channelId = "", // Not strictly needed
+            channelUrl = url,
+            tab = if (url.contains("/streams")) "streams" else "videos"
+        )
+        CustomChannelManager.addChannel(channel)
+        if (minDurationMinutes > 0) {
+            setShowMinDuration(internalName, minDurationMinutes)
+        }
+        _state.update { it.copy(
+            customChannelUrlInput = "", 
+            customChannelNameInput = "",
+            selectedTab = Tab.YOUTUBE,
+            selectedYtChannel = channel
+        ) }
+        refreshYouTubeChannels()
+        fetchYtEpisodes(channel)
+    }
+
+    fun editCustomYouTubeChannel(oldName: String, channelUrl: String, displayName: String) {
+        val url = channelUrl.trim()
+        if (url.isEmpty() || displayName.isBlank()) return
+        val channel = YouTubeChannel(
+            name = oldName, // Preserve the old ID so preferences (min_duration, enabled) stay mapped
+            displayName = displayName,
+            channelId = "",
+            channelUrl = url,
+            tab = if (url.contains("/streams")) "streams" else "videos"
+        )
+        CustomChannelManager.updateChannel(oldName, channel)
+        refreshYouTubeChannels()
+    }
+
+    fun setCustomChannelUrlInput(url: String) = _state.update { it.copy(customChannelUrlInput = url) }
+    fun setCustomChannelNameInput(name: String) = _state.update { it.copy(customChannelNameInput = name) }
+    
+    fun preloadSharedChannel(url: String, name: String) {
+        _state.update { it.copy(pendingSharedChannel = Pair(url, name)) }
+    }
+
+    fun dismissSharedChannel() {
+        _state.update { it.copy(pendingSharedChannel = null) }
+    }
+
+    fun removeCustomYouTubeChannel(name: String) {
+        CustomChannelManager.removeChannel(name)
+        refreshYouTubeChannels()
+    }
+
+    private fun refreshYouTubeChannels() {
+        val all = CustomChannelManager.getAllYouTubeChannels()
+        _state.update { state ->
+            state.copy(
+                allYtChannels = all,
+                selectedYtChannel = if (all.none { it.name == state.selectedYtChannel?.name }) all.firstOrNull() else state.selectedYtChannel,
+                ytChannelEnabledMap = all.associate { it.name to settings.isShowEnabled(it.name) },
+                showMinDurationMap = all.associate { it.name to settings.getMinDurationMinutes(it.name) }
+            )
+        }
     }
 
     val filteredYtEpisodes: List<Episode>

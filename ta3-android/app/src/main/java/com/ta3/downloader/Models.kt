@@ -1,5 +1,10 @@
 package com.ta3.downloader
 
+import android.os.Environment
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import java.io.File
+
 // ─── Data Models ──────────────────────────────────────────────────────────────
 
 data class Show(
@@ -166,3 +171,60 @@ val YOUTUBE_CHANNELS = listOf(
         tab = "videos"
     )
 )
+
+object CustomChannelManager {
+    private val gson = Gson()
+    private val customChannelsFile: File
+        get() {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TA3")
+            if (!dir.exists()) dir.mkdirs()
+            return File(dir, "custom_channels.json")
+        }
+
+    fun getCustomChannels(): List<YouTubeChannel> {
+        return try {
+            if (!customChannelsFile.exists()) emptyList()
+            else {
+                val type = object : TypeToken<List<YouTubeChannel>>() {}.type
+                gson.fromJson(customChannelsFile.readText(), type) ?: emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun saveCustomChannels(channels: List<YouTubeChannel>) {
+        try {
+            customChannelsFile.writeText(gson.toJson(channels))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun addChannel(channel: YouTubeChannel) {
+        val current = getCustomChannels().toMutableList()
+        if (current.none { it.name == channel.name }) {
+            current.add(channel)
+            saveCustomChannels(current)
+        }
+    }
+
+    fun removeChannel(name: String) {
+        val current = getCustomChannels().toMutableList()
+        current.removeAll { it.name == name }
+        saveCustomChannels(current)
+    }
+
+    fun updateChannel(oldName: String, updatedChannel: YouTubeChannel) {
+        val current = getCustomChannels().toMutableList()
+        val index = current.indexOfFirst { it.name == oldName }
+        if (index != -1) {
+            current[index] = updatedChannel
+            saveCustomChannels(current)
+        }
+    }
+
+    fun getAllYouTubeChannels(): List<YouTubeChannel> {
+        return YOUTUBE_CHANNELS + getCustomChannels()
+    }
+}

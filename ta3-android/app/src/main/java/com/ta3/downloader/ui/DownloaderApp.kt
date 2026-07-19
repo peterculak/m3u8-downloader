@@ -1,6 +1,8 @@
 package com.ta3.downloader.ui
 
 import android.widget.Toast
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 import androidx.compose.foundation.background
@@ -9,6 +11,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -29,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -175,6 +180,11 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onPrehrajEmailChange = { viewModel.setPrehrajEmail(it) },
                 onPrehrajPasswordChange = { viewModel.setPrehrajPassword(it) },
                 onPrehrajLogin = { viewModel.loginPrehraj() },
+                onAddCustomChannel = { url, name -> viewModel.addCustomYouTubeChannel(url, name) },
+                onEditCustomChannel = { oldName, url, name -> viewModel.editCustomYouTubeChannel(oldName, url, name) },
+                onRemoveCustomChannel = { name -> viewModel.removeCustomYouTubeChannel(name) },
+                onCustomChannelUrlChange = viewModel::setCustomChannelUrlInput,
+                onCustomChannelNameChange = viewModel::setCustomChannelNameInput,
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -205,6 +215,79 @@ fun DownloaderApp(viewModel: MainViewModel) {
                         TextButton(onClick = { viewModel.dismissSharedShare() }) {
                             Text("Zrušiť", color = MaterialTheme.colorScheme.error)
                         }
+                    }
+                }
+            )
+        }
+
+        // Shared YouTube Channel Prompt
+        state.pendingSharedChannel?.let { (url, name) ->
+            var editUrl by remember(url) { mutableStateOf(url) }
+            var editName by remember(name) { mutableStateOf(name) }
+            var selectedMinDuration by remember { mutableStateOf(0) }
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissSharedChannel() },
+                title = { Text("Pridať zdieľaný kanál") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = editUrl,
+                            onValueChange = { editUrl = it },
+                            label = { Text("URL kanálu") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editName,
+                            onValueChange = { editName = it },
+                            label = { Text("Zobrazovaný názov") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Minimálna dĺžka videa",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            AppSettings.MIN_DURATION_OPTIONS.forEach { minutes ->
+                                FilterChip(
+                                    selected = minutes == selectedMinDuration,
+                                    onClick = { selectedMinDuration = minutes },
+                                    label = {
+                                        Text(
+                                            if (minutes == 0) "Všetky" else "$minutes min",
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.addCustomYouTubeChannel(editUrl, editName, selectedMinDuration)
+                            viewModel.dismissSharedChannel()
+                            Toast.makeText(context, "Kanal \"$editName\" bol pridany!", Toast.LENGTH_SHORT).show()
+                        },
+                        enabled = editUrl.isNotBlank() && editName.isNotBlank()
+                    ) {
+                        Text("Pridať kanál", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissSharedChannel() }) {
+                        Text("Zrušiť", color = MaterialTheme.colorScheme.error)
                     }
                 }
             )
@@ -492,15 +575,31 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
 fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize()) {
 
-        Row(
+        val lazyListState = rememberLazyListState()
+        val selectedChannelName = state.selectedYtChannel?.name
+
+        LaunchedEffect(selectedChannelName) {
+            if (selectedChannelName == null) return@LaunchedEffect
+            // Wait reactively until the channel appears in allYtChannels
+            // (refreshYouTubeChannels runs async after the state update)
+            snapshotFlow { state.allYtChannels.indexOfFirst { it.name == selectedChannelName } }
+                .filter { it >= 0 }
+                .collect { index ->
+                    lazyListState.animateScrollToItem(index)
+                }
+        }
+
+        val selectedIndex = state.allYtChannels.indexOfFirst { it.name == selectedChannelName }
+
+        LazyRow(
+            state = lazyListState,
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            YOUTUBE_CHANNELS.forEach { channel ->
-                val selected = channel.name == state.selectedYtChannel.name
+            items(state.allYtChannels) { channel ->
+                val selected = channel.name == state.selectedYtChannel?.name
                 FilterChip(
                     selected = selected,
                     onClick = { viewModel.selectYtChannel(channel) },
@@ -942,8 +1041,15 @@ fun SettingsTab(
     onPrehrajEmailChange: (String) -> Unit,
     onPrehrajPasswordChange: (String) -> Unit,
     onPrehrajLogin: () -> Unit,
+    onAddCustomChannel: (String, String) -> Unit,
+    onEditCustomChannel: (String, String, String) -> Unit,
+    onRemoveCustomChannel: (String) -> Unit,
+    onCustomChannelUrlChange: (String) -> Unit,
+    onCustomChannelNameChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showEditDialog by remember { mutableStateOf<YouTubeChannel?>(null) }
+    
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
@@ -1191,7 +1297,7 @@ fun SettingsTab(
         item {
             SettingSection(title = "YouTube kanály") {
                 Column {
-                    YOUTUBE_CHANNELS.forEachIndexed { index, channel ->
+                    state.allYtChannels.forEachIndexed { index, channel ->
                         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1204,16 +1310,41 @@ fun SettingsTab(
                                     Text(channel.channelUrl, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Switch(
-                                    checked = state.ytChannelEnabledMap[channel.name] ?: true,
-                                    onCheckedChange = { onYtChannelToggle(channel.name, it) },
-                                    enabled = state.autoDownloadEnabled,
-                                    colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Switch(
+                                        checked = state.ytChannelEnabledMap[channel.name] ?: true,
+                                        onCheckedChange = { onYtChannelToggle(channel.name, it) },
+                                        enabled = state.autoDownloadEnabled,
+                                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                                    )
+                                    if (YOUTUBE_CHANNELS.none { it.name == channel.name }) {
+                                        IconButton(onClick = { showEditDialog = channel }) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit channel", tint = MaterialTheme.colorScheme.primary)
+                                        }
+                                        IconButton(onClick = { onRemoveCustomChannel(channel.name) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete channel", tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                            var expanded by remember(channel.name) { mutableStateOf(false) }
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { expanded = !expanded }
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Minimálna dĺžka videa", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                Icon(
+                                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (expanded) "Zbaliť" else "Rozbaliť",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            if (channel.name == "portalmarker") {
-                                Spacer(Modifier.height(8.dp))
-                                Text("Minimálna dĺžka videa", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            if (expanded) {
                                 Spacer(Modifier.height(8.dp))
                                 @OptIn(ExperimentalLayoutApi::class)
                                 FlowRow(
@@ -1243,12 +1374,45 @@ fun SettingsTab(
                                 }
                             }
                         }
-                        if (index < YOUTUBE_CHANNELS.size - 1) {
+                        if (index < state.allYtChannels.size - 1) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // Add Custom YouTube Channel
+        item {
+            SettingSection(title = "Pridať vlastný YouTube kanál") {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = state.customChannelUrlInput,
+                        onValueChange = onCustomChannelUrlChange,
+                        label = { Text("URL kanálu (napr. https://youtube.com/@kanál)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.customChannelNameInput,
+                        onValueChange = onCustomChannelNameChange,
+                        label = { Text("Zobrazovaný názov") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = { onAddCustomChannel(state.customChannelUrlInput, state.customChannelNameInput) },
+                        enabled = state.customChannelUrlInput.isNotBlank() && state.customChannelNameInput.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Pridať kanál")
                     }
                 }
             }
@@ -1359,6 +1523,48 @@ fun SettingsTab(
                 }
             }
         }
+    }
+
+    if (showEditDialog != null) {
+        val channelToEdit = showEditDialog!!
+        var editUrl by remember(channelToEdit) { mutableStateOf(channelToEdit.channelUrl) }
+        var editName by remember(channelToEdit) { mutableStateOf(channelToEdit.displayName) }
+
+        AlertDialog(
+            onDismissRequest = { showEditDialog = null },
+            title = { Text("Upraviť kanál") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editUrl,
+                        onValueChange = { editUrl = it },
+                        label = { Text("URL kanálu") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Zobrazovaný názov") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onEditCustomChannel(channelToEdit.name, editUrl, editName)
+                        showEditDialog = null
+                    },
+                    enabled = editUrl.isNotBlank() && editName.isNotBlank()
+                ) { Text("Uložiť") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = null }) { Text("Zrušiť") }
+            }
+        )
     }
 }
 

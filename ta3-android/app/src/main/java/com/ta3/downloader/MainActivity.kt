@@ -72,9 +72,26 @@ class MainActivity : ComponentActivity() {
             val regex = Regex("""(https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)[a-zA-Z0-9_-]+)""")
             val match = regex.find(sharedText)
             
+            val channelRegex = Regex("""(https?://(?:www\.)?youtube\.com/(?:@|channel/)[a-zA-Z0-9_-]+)""")
+            val channelMatch = channelRegex.find(sharedText)
+            
             if (match != null) {
                 val url = match.value
                 viewModel.promptSharedYouTubeVideo(url)
+            } else if (channelMatch != null) {
+                var url = channelMatch.value
+                if (!url.endsWith("/videos") && !url.endsWith("/streams")) {
+                    url += "/videos"
+                }
+                
+                val nameMatch = Regex("""^(.*?)\s*-?\s*YouTube\s*https?://""").find(sharedText)
+                var name = nameMatch?.groupValues?.get(1)?.trim() ?: ""
+                
+                if (name.isEmpty()) {
+                    name = Regex("""@([a-zA-Z0-9_-]+)""").find(url)?.groupValues?.get(1) ?: "Neznámy kanál"
+                }
+                
+                viewModel.preloadSharedChannel(url, name)
             }
         }
     }

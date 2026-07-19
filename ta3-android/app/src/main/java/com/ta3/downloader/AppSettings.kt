@@ -41,7 +41,7 @@ class AppSettings(context: Context) {
         STVR_SHOWS.filter { isShowEnabled(it.name) }
 
     fun enabledYouTubeChannels(): List<YouTubeChannel> =
-        YOUTUBE_CHANNELS.filter { isShowEnabled(it.name) }
+        CustomChannelManager.getAllYouTubeChannels().filter { isShowEnabled(it.name) }
 
     // ─── First-run flag ─────────────────────────────────────────────────────────
 

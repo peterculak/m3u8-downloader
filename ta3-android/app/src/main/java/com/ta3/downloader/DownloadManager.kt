@@ -132,7 +132,7 @@ class DownloadManager(private val context: Context) {
                 // These channels publish infrequently (every few weeks); auto-deleting after
                 // 7 days would wipe the only available episode, and then the app could
                 // re-download it on the next run creating a delete-redownload loop.
-                if (YOUTUBE_CHANNELS.any { it.name == entry.showName }) {
+                if (CustomChannelManager.getAllYouTubeChannels().any { it.name == entry.showName }) {
                     Log.d(TAG, "Auto-delete: skipping YouTube episode '${entry.title}' (keep YouTube downloads)")
                     return@filter false
                 }
@@ -526,7 +526,7 @@ class DownloadManager(private val context: Context) {
         onProgress(0.05f)
 
         // 2. Look up display name for the channel
-        val channel = YOUTUBE_CHANNELS.find { it.name == episode.showName }
+        val channel = CustomChannelManager.getAllYouTubeChannels().find { it.name == episode.showName }
         val showDisplayName = channel?.displayName ?: episode.showName
 
         // 3. Build output path
@@ -630,7 +630,7 @@ class DownloadManager(private val context: Context) {
         val (videoUrl, audioUrl, durationMs) = YouTubeScraper.resolveHighestQualityVideoAndAudio(episode.url)
         onProgress(0.05f)
 
-        val channel = YOUTUBE_CHANNELS.find { it.name == episode.showName }
+        val channel = CustomChannelManager.getAllYouTubeChannels().find { it.name == episode.showName }
         val showDisplayName = channel?.displayName ?: episode.showName
 
         val safeTitle = episode.title

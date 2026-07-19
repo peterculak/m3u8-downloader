@@ -71,7 +71,15 @@ object YouTubeScraper {
     }
 
     suspend fun fetchEpisodes(channel: YouTubeChannel): List<Episode> = withContext(Dispatchers.IO) {
-        val streamsUrl = "https://www.youtube.com/channel/${channel.channelId}/${channel.tab}"
+        val streamsUrl = if (channel.channelId.isNotEmpty()) {
+            "https://www.youtube.com/channel/${channel.channelId}/${channel.tab}"
+        } else {
+            if (channel.channelUrl.endsWith("/${channel.tab}")) {
+                channel.channelUrl
+            } else {
+                "${channel.channelUrl.removeSuffix("/")}/${channel.tab}"
+            }
+        }
         Log.d(TAG, "Fetching streams HTML: $streamsUrl")
 
         val request = Request.Builder()
@@ -92,44 +100,6 @@ object YouTubeScraper {
         // Use indexOf and substring instead of Regex to prevent StackOverflowError on massive HTML strings
         val jsonString = extractYtInitialDataJson(html)
         
-        fun parseRelativeDate(relativeStr: String): String {
-            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-            if (relativeStr.isBlank()) return "1970-01-01" // Default to old date so we don't accidentally download everything
-            
-            val cal = java.util.Calendar.getInstance()
-            val text = relativeStr.lowercase()
-            
-            // Extract the first number found in the string
-            var num = Regex("""(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-            if (text.contains("predvčerom")) num = 2
-            
-            if (text.contains("day") || text.contains("deň") || text.contains("dňom") ||
-                text.contains("dňami") || text.contains("dní") || text.contains("dnem") ||
-                text.contains("včera") || text.contains("predvčerom")) {
-                cal.add(java.util.Calendar.DAY_OF_YEAR, -num)
-            } else if (text.contains("week") || text.contains("týždeň") || text.contains("týždňami") ||
-                text.contains("týždne") || text.contains("týždňom")) {
-                cal.add(java.util.Calendar.DAY_OF_YEAR, -(num * 7))
-            } else if (text.contains("month") || text.contains("mesiac") || text.contains("mesiacmi") || text.contains("mesiace")) {
-                cal.add(java.util.Calendar.MONTH, -num)
-            } else if (text.contains("year") || text.contains("rok") || text.contains("rokmi") || text.contains("roky")) {
-                cal.add(java.util.Calendar.YEAR, -num)
-            } else if (text.contains("hour") || text.contains("hodin") || text.contains("minute") ||
-                text.contains("minút") || text.contains("second") || text.contains("sekund") || text.contains("dnes")) {
-                // Keep as today
-            } else if (text.contains("live") || text.contains("naživo") || text.contains("premiéra") ||
-                text.contains("premiere") || text.contains("streamed") || text.contains("streamované")) {
-                // Keep as today — e.g. "Streamed 10 hours ago" / "Streamované pred 10 hodinami"
-            } else {
-                // If we completely fail to parse it, do NOT assume it's today! 
-                // Return an old date so we don't trigger mass downloads of old episodes.
-                Log.w(TAG, "Could not parse relative time: $relativeStr")
-                return "1970-01-01"
-            }
-            
-            return sdf.format(cal.time)
-        }
-
         fun resolveRelativeTime(relativeTime: String, videoId: String): String {
             if (relativeTime.isNotBlank()) return relativeTime
             val fromJson = findRelativeTimeInRawJson(jsonString ?: "", videoId)
@@ -183,15 +153,17 @@ object YouTubeScraper {
                             
                             var relativeTime = ""
                             try {
-                                val parts = lockup.getAsJsonObject("metadata")
+                                val rows = lockup.getAsJsonObject("metadata")
                                     .getAsJsonObject("lockupMetadataViewModel")
                                     .getAsJsonObject("metadata")
                                     .getAsJsonObject("contentMetadataViewModel")
                                     .getAsJsonArray("metadataRows")
-                                    .get(0).asJsonObject.getAsJsonArray("metadataParts")
-                                if (parts.size() > 0) {
-                                    val textObj = parts.get(parts.size() - 1).asJsonObject.getAsJsonObject("text")
-                                    relativeTime = if (textObj.has("content")) textObj.get("content").asString else textObj.get("simpleText").asString
+                                if (rows.size() > 0) {
+                                    val parts = rows.get(rows.size() - 1).asJsonObject.getAsJsonArray("metadataParts")
+                                    if (parts.size() > 0) {
+                                        val textObj = parts.get(parts.size() - 1).asJsonObject.getAsJsonObject("text")
+                                        relativeTime = if (textObj.has("content")) textObj.get("content").asString else textObj.get("simpleText").asString
+                                    }
                                 }
                             } catch (e: Exception) {
                                 // Fallback for alternative JSON structures
@@ -530,4 +502,38 @@ object YouTubeScraper {
         
         return total
     }
-}
+
+    fun parseRelativeDate(relativeStr: String, referenceCal: java.util.Calendar? = null): String {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            if (relativeStr.isBlank()) return "1970-01-01"
+            
+            val cal = referenceCal ?: java.util.Calendar.getInstance()
+            val text = relativeStr.lowercase()
+            
+            var num = Regex("""(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            if (text.contains("predvčerom")) num = 2
+            
+            if (text.contains("year") || text.contains("rok") || text.contains("rokmi") || text.contains("roky")) {
+                cal.add(java.util.Calendar.YEAR, -num)
+            } else if (text.contains("month") || text.contains("mesiac") || text.contains("mesiacmi") || text.contains("mesiace")) {
+                cal.add(java.util.Calendar.MONTH, -num)
+            } else if (text.contains("week") || text.contains("týždeň") || text.contains("týždňami") ||
+                text.contains("týždne") || text.contains("týždňom")) {
+                cal.add(java.util.Calendar.DAY_OF_YEAR, -(num * 7))
+            } else if (text.contains("day") || text.contains("deň") || text.contains("dňom") ||
+                text.contains("dňami") || text.contains("dní") || text.contains("dnem") ||
+                text.contains("včera") || text.contains("predvčerom")) {
+                cal.add(java.util.Calendar.DAY_OF_YEAR, -num)
+            } else if (text.contains("hour") || text.contains("hodin") || text.contains("minute") ||
+                text.contains("minút") || text.contains("second") || text.contains("sekund") || text.contains("dnes")) {
+                // Keep as today
+            } else if (text.contains("live") || text.contains("naživo") || text.contains("premiéra") ||
+                text.contains("premiere") || text.contains("streamed") || text.contains("streamované")) {
+                // Keep as today
+            } else {
+                return "1970-01-01"
+            }
+            
+            return sdf.format(cal.time)
+        }
+    }
