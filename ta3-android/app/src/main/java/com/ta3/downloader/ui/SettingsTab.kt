@@ -483,6 +483,17 @@ fun RenderStaticSection(
         "storage_settings" -> {
             Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column {
+                    val totalVideos = state.downloadedFiles.size
+                    val totalSize = formatFileSize(state.downloadedFiles.sumOf { it.fileSizeBytes })
+                    
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Úložisko", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text("$totalVideos stiahnutých epizód ($totalSize)", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Automatické vymazávanie starých epizód", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
