@@ -7,6 +7,7 @@ sealed class SettingsRow(val rowKey: String) {
     data class SectionHeader(val sectionId: String, val title: String, val isExpanded: Boolean) : SettingsRow("header_$sectionId")
     data class Ta3ShowItem(val show: Show, val isExpanded: Boolean) : SettingsRow("ta3_${show.name}")
     data class StvrShowItem(val show: Show, val isExpanded: Boolean) : SettingsRow("stvr_${show.name}")
+    data class TyzdenShowItem(val show: Show, val isExpanded: Boolean) : SettingsRow("tyzden_${show.name}")
     data class YtChannelItem(val channel: YouTubeChannel, val isExpanded: Boolean) : SettingsRow("yt_${channel.name}")
     data class PrehrajSettingsItem(val isExpanded: Boolean) : SettingsRow("prehraj_content")
 }

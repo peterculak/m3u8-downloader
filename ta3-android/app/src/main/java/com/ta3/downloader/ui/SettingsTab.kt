@@ -57,10 +57,12 @@ fun SettingsTab(
     onCustomChannelNameChange: (String) -> Unit,
     onMoveTa3Show: (Int, Int) -> Unit,
     onMoveStvrShow: (Int, Int) -> Unit,
+    onMoveTyzdenShow: (Int, Int) -> Unit,
     onMoveYtChannel: (Int, Int) -> Unit,
     onMoveSection: (Int, Int) -> Unit,
     onToggleSection: (String) -> Unit,
     onToggleItem: (String) -> Unit,
+    onTyzdenShowToggle: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEditDialog by remember { mutableStateOf<YouTubeChannel?>(null) }
@@ -88,6 +90,12 @@ fun SettingsTab(
                     items.add(SettingsRow.SectionHeader("stvr", "STVR", state.expandedSections.contains("stvr")))
                     if (state.expandedSections.contains("stvr")) {
                         state.stvrShows.forEach { items.add(SettingsRow.StvrShowItem(it, state.expandedItems.contains("stvr_${it.name}"))) }
+                    }
+                }
+                "tyzden" -> {
+                    items.add(SettingsRow.SectionHeader("tyzden", ".TÝŽDEŇ", state.expandedSections.contains("tyzden")))
+                    if (state.expandedSections.contains("tyzden")) {
+                        state.tyzdenShows.forEach { items.add(SettingsRow.TyzdenShowItem(it, state.expandedItems.contains("tyzden_${it.name}"))) }
                     }
                 }
                 "yt" -> {
@@ -130,6 +138,11 @@ fun SettingsTab(
                 val fromIdx = state.stvrShows.indexOf(fromItem.show)
                 val toIdx = state.stvrShows.indexOf((toItem as SettingsRow.StvrShowItem).show)
                 if (fromIdx >= 0 && toIdx >= 0) onMoveStvrShow(fromIdx, toIdx)
+            }
+            is SettingsRow.TyzdenShowItem -> {
+                val fromIdx = state.tyzdenShows.indexOf(fromItem.show)
+                val toIdx = state.tyzdenShows.indexOf((toItem as SettingsRow.TyzdenShowItem).show)
+                if (fromIdx >= 0 && toIdx >= 0) onMoveTyzdenShow(fromIdx, toIdx)
             }
             is SettingsRow.YtChannelItem -> {
                 val fromIdx = state.allYtChannels.indexOf(fromItem.channel)
@@ -288,6 +301,42 @@ fun SettingsTab(
                                         Switch(
                                             checked = state.stvrShowEnabledMap[row.show.name] ?: true,
                                             onCheckedChange = { onStvrShowToggle(row.show.name, it) },
+                                            enabled = state.autoDownloadEnabled,
+                                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.DragHandle,
+                                            contentDescription = "Drag",
+                                            modifier = Modifier.draggableHandle(),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is SettingsRow.TyzdenShowItem -> {
+                        Box(modifier = modifierBase) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onToggleItem(row.rowKey) }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(row.show.displayName, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    if (row.isExpanded) {
+                                        Text(row.show.url, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (row.isExpanded) {
+                                        Switch(
+                                            checked = state.tyzdenShowEnabledMap[row.show.name] ?: true,
+                                            onCheckedChange = { onTyzdenShowToggle(row.show.name, it) },
                                             enabled = state.autoDownloadEnabled,
                                             colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MaterialTheme.colorScheme.primary)
                                         )

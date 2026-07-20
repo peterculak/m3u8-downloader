@@ -98,6 +98,12 @@ fun DownloaderApp(viewModel: MainViewModel) {
                                 selected = state.selectedTab == Tab.STVR,
                                 onClick = { viewModel.selectTab(Tab.STVR) }
                             )
+                            Tab.TYZDEN -> TabItem(
+                                icon = Icons.Outlined.Mic,
+                                label = ".týždeň",
+                                selected = state.selectedTab == Tab.TYZDEN,
+                                onClick = { viewModel.selectTab(Tab.TYZDEN) }
+                            )
                             Tab.YOUTUBE -> TabItem(
                                 icon = Icons.Outlined.OndemandVideo,
                                 label = "YouTube",
@@ -135,6 +141,11 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 modifier = Modifier.padding(innerPadding)
             )
             Tab.STVR -> StvrTab(
+                state = state,
+                viewModel = viewModel,
+                modifier = Modifier.padding(innerPadding)
+            )
+            Tab.TYZDEN -> TyzdenTab(
                 state = state,
                 viewModel = viewModel,
                 modifier = Modifier.padding(innerPadding)
@@ -180,6 +191,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onWifiOnlyToggle = { viewModel.setWifiOnly(it) },
                 onShowToggle = { name, enabled -> viewModel.setShowEnabled(name, enabled) },
                 onStvrShowToggle = { name, enabled -> viewModel.setStvrShowEnabled(name, enabled) },
+                onTyzdenShowToggle = { name, enabled -> viewModel.setTyzdenShowEnabled(name, enabled) },
                 onYtChannelToggle = { name, enabled -> viewModel.setYtChannelEnabled(name, enabled) },
                 onPrehrajEmailChange = { viewModel.setPrehrajEmail(it) },
                 onPrehrajPasswordChange = { viewModel.setPrehrajPassword(it) },
@@ -191,6 +203,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onCustomChannelNameChange = viewModel::setCustomChannelNameInput,
                 onMoveTa3Show = viewModel::moveTa3Show,
                 onMoveStvrShow = viewModel::moveStvrShow,
+                onMoveTyzdenShow = viewModel::moveTyzdenShow,
                 onMoveYtChannel = viewModel::moveYtChannel,
                 onMoveSection = viewModel::moveSection,
                 onToggleSection = viewModel::toggleSection,
@@ -571,6 +584,118 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startStvrDownload(episode) },
+                                onCancelDownload = { viewModel.cancelDownload(episode.url) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize()) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            state.tyzdenShows.forEach { show ->
+                val selected = show.name == state.selectedTyzdenShow.name
+                FilterChip(
+                    selected = selected,
+                    onClick = { viewModel.selectTyzdenShow(show) },
+                    label = { Text(show.displayName, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = Color.White
+                    )
+                )
+            }
+        }
+
+        // Search bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Search, null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                BasicTextField(
+                    value = state.tyzdenSearchQuery,
+                    onValueChange = viewModel::setTyzdenSearchQuery,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        if (state.tyzdenSearchQuery.isEmpty()) {
+                            Text("Hľadať epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                        }
+                        inner()
+                    }
+                )
+                if (state.tyzdenSearchQuery.isNotEmpty()) {
+                    Icon(Icons.Default.Close, "Vymazať",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp).clickable { viewModel.setTyzdenSearchQuery("") })
+                }
+            }
+        }
+
+        when {
+            state.tyzdenLoadingEpisodes -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Načítavam epizódy...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            state.tyzdenEpisodeLoadError != null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.ErrorOutline, null,
+                            tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text(state.tyzdenEpisodeLoadError, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { viewModel.fetchTyzdenEpisodes() }) { Text("Opakovať") }
+                    }
+                }
+            }
+            else -> {
+                val episodes = viewModel.filteredTyzdenEpisodes
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (episodes.isEmpty()) {
+                        item {
+                            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Žiadne epizódy", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else {
+                        items(episodes, key = { it.url }) { episode ->
+                            EpisodeCard(
+                                episode = episode,
+                                isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
+                                activeDownload = state.activeDownloads[episode.url],
+                                onDownload = { viewModel.startTyzdenDownload(episode) },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }

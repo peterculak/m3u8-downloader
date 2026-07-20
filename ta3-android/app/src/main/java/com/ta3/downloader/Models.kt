@@ -139,6 +139,16 @@ val STVR_SHOWS = listOf(
     )
 )
 
+// ─── Tyzden Show Definitions ──────────────────────────────────────────────────
+
+val TYZDEN_SHOWS = listOf(
+    Show(
+        name = "bezpecnostny-radar",
+        displayName = "Bezpečnostný radar",
+        url = "https://www.tyzden.sk/podcasty/bezpecnostny-radar-generala-pavla-macka/"
+    )
+)
+
 // ─── YouTube Channel Definitions ─────────────────────────────────────────────
 
 data class YouTubeChannel(

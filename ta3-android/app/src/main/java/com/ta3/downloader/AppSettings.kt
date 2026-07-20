@@ -40,6 +40,9 @@ class AppSettings(context: Context) {
     fun enabledStvrShows(): List<Show> =
         STVR_SHOWS.filter { isShowEnabled(it.name) }
 
+    fun enabledTyzdenShows(): List<Show> =
+        TYZDEN_SHOWS.filter { isShowEnabled(it.name) }
+
     fun enabledYouTubeChannels(): List<YouTubeChannel> =
         CustomChannelManager.getAllYouTubeChannels().filter { isShowEnabled(it.name) }
 
@@ -66,10 +69,15 @@ class AppSettings(context: Context) {
             val saved = prefs.getString("section_order", null)?.split(",")?.filter { it.isNotBlank() }
             if (saved != null) {
                 val order = saved.filter { it != "tabs" }.toMutableList()
+                if (!order.contains("tyzden")) {
+                    val ta3Idx = order.indexOf("ta3")
+                    if (ta3Idx >= 0) order.add(ta3Idx + 1, "tyzden")
+                    else order.add("tyzden")
+                }
                 if (!order.contains("prehraj")) order.add("prehraj")
                 return order
             }
-            return listOf("ta3", "stvr", "yt", "prehraj")
+            return listOf("ta3", "tyzden", "stvr", "yt", "prehraj")
         }
         set(v) = prefs.edit { putString("section_order", v.joinToString(",")) }
 

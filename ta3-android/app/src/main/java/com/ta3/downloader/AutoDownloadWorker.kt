@@ -243,6 +243,61 @@ class AutoDownloadWorker(
                     Log.e(TAG, "Failed to fetch STVR ${show.displayName}: ${e.message}")
                 }
             }
+            
+            // --- Tyzden shows ---
+            val enabledTyzdenShows = settings.enabledTyzdenShows()
+            for (show in enabledTyzdenShows) {
+                try {
+                    Log.d(TAG, "Fetching episodes for .týždeň show: ${show.displayName}")
+                    val episodes = TyzdenScraper.fetchEpisodes(show, maxPages = 1)
+                    val recent = episodes.filter { it.date == today }
+
+                    for (episode in recent) {
+                        // Skip if already downloaded or currently retrying
+                        if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
+                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            continue
+                        }
+                        if (deletedUrls.contains(episode.url)) {
+                            Log.w(TAG, "Skipping tombstoned .týždeň episode (was auto-deleted): ${episode.title}")
+                            continue
+                        }
+
+                        val job = async {
+                            try {
+                                Log.d(TAG, "Downloading .týždeň: ${episode.title}")
+                                downloadManager.markPending(episode)
+                                DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
+
+                                downloadManager.download(episode) { progress ->
+                                    DownloadStateTracker.updateProgress(episode.url, progress, DownloadStatus.DOWNLOADING)
+                                }
+
+                                downloadManager.markComplete(episode.url)
+                                DownloadStateTracker.updateProgress(episode.url, 1f, DownloadStatus.DONE)
+                                synchronized(downloaded) {
+                                    if (!downloaded.contains(show.displayName)) {
+                                        downloaded.add(show.displayName)
+                                    }
+                                }
+                                Log.d(TAG, "Done .týždeň: ${episode.title}")
+
+                                kotlinx.coroutines.delay(1500)
+                                DownloadStateTracker.removeDownload(episode.url)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to download .týždeň ${episode.title}: ${e.message}")
+                                downloadManager.markFailed(episode.url)
+                                DownloadStateTracker.updateError(episode.url, e.message)
+                                kotlinx.coroutines.delay(4000)
+                                DownloadStateTracker.removeDownload(episode.url)
+                            }
+                        }
+                        jobs.add(job)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to fetch .týždeň ${show.displayName}: ${e.message}")
+                }
+            }
 
             // --- YouTube channels ---
             val enabledYtChannels = settings.enabledYouTubeChannels()

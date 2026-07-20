@@ -27,6 +27,13 @@ data class UiState(
     val stvrEpisodeLoadError: String? = null,
     val stvrSearchQuery: String = "",
     val stvrShowEnabledMap: Map<String, Boolean> = STVR_SHOWS.associate { it.name to true },
+    // Tyzden
+    val selectedTyzdenShow: Show = TYZDEN_SHOWS.firstOrNull() ?: Show("", "", ""),
+    val tyzdenEpisodes: List<Episode> = emptyList(),
+    val tyzdenLoadingEpisodes: Boolean = false,
+    val tyzdenEpisodeLoadError: String? = null,
+    val tyzdenSearchQuery: String = "",
+    val tyzdenShowEnabledMap: Map<String, Boolean> = TYZDEN_SHOWS.associate { it.name to true },
     // Settings
     val syncIntervalHours: Int = AppSettings.DEFAULT_INTERVAL_HOURS,
     val autoDownloadEnabled: Boolean = true,
@@ -58,15 +65,16 @@ data class UiState(
     val customChannelNameInput: String = "",
     val pendingSharedChannel: Pair<String, String>? = null,  // url to displayName
     // Ordering
-    val mainTabs: List<Tab> = listOf(Tab.EPISODES, Tab.STVR, Tab.YOUTUBE, Tab.DOWNLOADS, Tab.PREHRAJ, Tab.SETTINGS),
-    val sectionOrder: List<String> = listOf("tabs", "ta3", "stvr", "yt"),
+    val mainTabs: List<Tab> = listOf(Tab.EPISODES, Tab.STVR, Tab.TYZDEN, Tab.YOUTUBE, Tab.DOWNLOADS, Tab.PREHRAJ, Tab.SETTINGS),
+    val sectionOrder: List<String> = listOf("tabs", "ta3", "tyzden", "stvr", "yt"),
     val ta3Shows: List<Show> = TA3_SHOWS,
     val stvrShows: List<Show> = STVR_SHOWS,
-    val expandedSections: Set<String> = setOf("ta3", "stvr", "yt", "tabs"),
+    val tyzdenShows: List<Show> = TYZDEN_SHOWS,
+    val expandedSections: Set<String> = setOf("ta3", "stvr", "tyzden", "yt", "tabs"),
     val expandedItems: Set<String> = emptySet()
 )
 
-enum class Tab { EPISODES, STVR, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
+enum class Tab { EPISODES, STVR, TYZDEN, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
 
 enum class PrehrajLoginStatus { LOGGED_OUT, LOGGING_IN, LOGGED_IN, FAILED }
 
@@ -85,11 +93,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             autoDeleteDays = settings.autoDeleteDays,
             showEnabledMap = TA3_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             stvrShowEnabledMap = STVR_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
+            tyzdenShowEnabledMap = TYZDEN_SHOWS.associate { it.name to settings.isShowEnabled(it.name) },
             ytChannelEnabledMap = CustomChannelManager.getAllYouTubeChannels().associate { it.name to settings.isShowEnabled(it.name) },
             showMinDurationMap = CustomChannelManager.getAllYouTubeChannels().associate { it.name to settings.getMinDurationMinutes(it.name) },
             mainTabs = getSortedMainTabs(settings),
             ta3Shows = getSortedTa3Shows(settings),
             stvrShows = getSortedStvrShows(settings),
+            tyzdenShows = getSortedTyzdenShows(settings),
             allYtChannels = getSortedYtChannels(settings),
             selectedYtChannel = getSortedYtChannels(settings).firstOrNull(),
             sectionOrder = settings.sectionOrder,
@@ -104,6 +114,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         observeActiveDownloads()
         fetchEpisodes(_state.value.ta3Shows.firstOrNull() ?: TA3_SHOWS[0])
         fetchStvrEpisodes(_state.value.stvrShows.firstOrNull() ?: STVR_SHOWS[0])
+        if (_state.value.tyzdenShows.isNotEmpty()) fetchTyzdenEpisodes(_state.value.tyzdenShows[0])
         _state.value.selectedYtChannel?.let { fetchYtEpisodes(it) }
         // Auto-login to prehraj.to on startup if credentials are saved
         if (settings.prehrajEmail.isNotEmpty() && settings.prehrajPassword.isNotEmpty()) {
@@ -416,6 +427,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
+    // ─── Tyzden Shows ──────────────────────────────────────────────────────────
+
+    fun selectTyzdenShow(show: Show) {
+        _state.update { it.copy(selectedTyzdenShow = show) }
+        fetchTyzdenEpisodes(show)
+    }
+
+    fun fetchTyzdenEpisodes(show: Show = _state.value.selectedTyzdenShow) {
+        viewModelScope.launch {
+            _state.update { it.copy(tyzdenLoadingEpisodes = true, tyzdenEpisodeLoadError = null) }
+            try {
+                val episodes = TyzdenScraper.fetchEpisodes(show)
+                _state.update { it.copy(tyzdenEpisodes = episodes, tyzdenLoadingEpisodes = false) }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        tyzdenLoadingEpisodes = false,
+                        tyzdenEpisodeLoadError = "Failed to load .týždeň episodes: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun startTyzdenDownload(episode: Episode) {
+        if (_state.value.activeDownloads.containsKey(episode.url)) return
+        DownloadEpisodeWorker.enqueue(getApplication(), episode)
+    }
+
+    fun setTyzdenSearchQuery(q: String) = _state.update { it.copy(tyzdenSearchQuery = q) }
+
+    fun setTyzdenShowEnabled(showName: String, enabled: Boolean) {
+        settings.setShowEnabled(showName, enabled)
+        _state.update { it.copy(tyzdenShowEnabledMap = it.tyzdenShowEnabledMap + (showName to enabled)) }
+    }
+
+    val filteredTyzdenEpisodes: List<Episode>
+        get() {
+            val q = _state.value.tyzdenSearchQuery.lowercase()
+            return if (q.isEmpty()) _state.value.tyzdenEpisodes
+            else _state.value.tyzdenEpisodes.filter {
+                it.title.lowercase().contains(q) || it.date.contains(q)
+            }
+        }
+
     // ─── YouTube Channels ──────────────────────────────────────────────────────
 
     fun selectYtChannel(channel: YouTubeChannel) {
@@ -583,6 +639,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(stvrShows = shows) }
     }
 
+    fun moveTyzdenShow(fromIndex: Int, toIndex: Int) {
+        val shows = _state.value.tyzdenShows.toMutableList()
+        val item = shows.removeAt(fromIndex)
+        shows.add(toIndex, item)
+        // reuse stvrShowOrder conceptually, but let's add tyzdenShowOrder to AppSettings later if needed.
+        // For now, if we don't have it in AppSettings, we just update state.
+        _state.update { it.copy(tyzdenShows = shows) }
+    }
+
     fun moveYtChannel(fromIndex: Int, toIndex: Int) {
         val channels = _state.value.allYtChannels.toMutableList()
         val item = channels.removeAt(fromIndex)
@@ -602,6 +667,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return STVR_SHOWS.sortedBy { order.indexOf(it.name).takeIf { idx -> idx >= 0 } ?: Int.MAX_VALUE }
         }
 
+        private fun getSortedTyzdenShows(settings: AppSettings): List<Show> {
+            return TYZDEN_SHOWS
+        }
+
         private fun getSortedYtChannels(settings: AppSettings): List<YouTubeChannel> {
             val order = settings.ytChannelOrder
             return CustomChannelManager.getAllYouTubeChannels()
@@ -614,6 +683,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 when (it) {
                     "ta3" -> Tab.EPISODES
                     "stvr" -> Tab.STVR
+                    "tyzden" -> Tab.TYZDEN
                     "yt" -> Tab.YOUTUBE
                     "prehraj" -> Tab.PREHRAJ
                     else -> null
