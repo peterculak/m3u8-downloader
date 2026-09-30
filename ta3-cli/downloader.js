@@ -181,7 +181,7 @@ async function downloadEpisode(item, task, history, saveHistory) {
       const videoId = videoIdMatch[1];
 
       // 3. Fetch VOD source template
-      const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2/vod-source.js', {
+      const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2_test/vod-source.js', {
         'Referer': ep.url,
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       });

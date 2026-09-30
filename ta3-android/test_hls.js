@@ -12,7 +12,7 @@ function fetchText(url) {
 }
 
 async function test() {
-  const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2/vod-source.js');
+  const jsSource = await fetchText('https://embed.livebox.cz/ta3_v2_test/vod-source.js');
   const srcMatch = jsSource.match(/"src"\s*:\s*"([^"]+)"/);
   
   // Use a known video ID

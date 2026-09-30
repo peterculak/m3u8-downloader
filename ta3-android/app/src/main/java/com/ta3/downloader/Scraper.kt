@@ -120,7 +120,7 @@ object Scraper {
         val videoId = videoIdMatch.groupValues[1]
 
         // 3. Fetch the livebox vod-source.js to get fresh auth token
-        val jsSource = get("https://embed.livebox.cz/ta3_v2/vod-source.js")
+        val jsSource = get("https://embed.livebox.cz/ta3_v2_test/vod-source.js")
 
         val srcMatch = Regex(""""src"\s*:\s*"([^"]+)"""").find(jsSource)
             ?: throw Exception("No src template found in vod-source.js")
