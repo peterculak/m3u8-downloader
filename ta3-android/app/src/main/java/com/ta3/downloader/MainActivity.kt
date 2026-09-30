@@ -11,6 +11,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
+import android.content.Context
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import com.ta3.downloader.ui.DownloaderApp
 import com.ta3.downloader.ui.theme.TA3Theme
 
@@ -36,6 +40,21 @@ class MainActivity : ComponentActivity() {
             ) {
                 requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+
+        // Request battery optimization exemption so background downloads run reliably
+        try {
+            val prefs = getSharedPreferences("ta3_settings", Context.MODE_PRIVATE)
+            val askedBattery = prefs.getBoolean("asked_battery_opt", false)
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName) && !askedBattery) {
+                prefs.edit().putBoolean("asked_battery_opt", true).apply()
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.data = Uri.parse("package:$packageName")
+                startActivity(intent)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
 
         // Schedule periodic background worker
