@@ -26,7 +26,9 @@ class AutoDownloadWorker(
     private val downloadManager = DownloadManager(context)
 
     override suspend fun doWork(): Result {
-        Log.d(TAG, "AutoDownloadWorker started")
+        AppLogger.init(applicationContext)
+        AppLogger.isEnabled = settings.loggingEnabled
+        AppLogger.d(TAG, "AutoDownloadWorker started")
         
         try {
             NotificationHelper.createChannel(applicationContext)
@@ -37,7 +39,7 @@ class AutoDownloadWorker(
 
         // Honour the master auto-download toggle
         if (!settings.autoDownloadEnabled) {
-            Log.d(TAG, "Auto-download disabled — skipping")
+            AppLogger.d(TAG, "Auto-download disabled — skipping")
             return Result.success()
         }
 
@@ -45,18 +47,18 @@ class AutoDownloadWorker(
             try {
                 downloadManager.cleanupOldDownloads(settings.autoDeleteDays)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to cleanup old downloads", e)
+                AppLogger.e(TAG, "Failed to cleanup old downloads", e)
             }
         }
 
         // Load tombstone of previously auto-deleted episode URLs.
         // No episode in this set will ever be automatically re-downloaded.
         val deletedUrls = try { downloadManager.loadDeletedUrls() } catch (e: Exception) { emptySet() }
-        Log.d(TAG, "Tombstone: ${deletedUrls.size} previously auto-deleted URL(s) will be skipped")
+        AppLogger.d(TAG, "Tombstone: ${deletedUrls.size} previously auto-deleted URL(s) will be skipped")
 
         val enabledShows = settings.enabledShows()
         if (enabledShows.isEmpty()) {
-            Log.d(TAG, "No shows enabled — skipping")
+            AppLogger.d(TAG, "No shows enabled — skipping")
             return Result.success()
         }
 
@@ -72,7 +74,7 @@ class AutoDownloadWorker(
             for (p in pending) {
                 // Stop retrying if the episode is no longer from today
                 if (p.date != today) {
-                    Log.w(TAG, "Dropping stale pending download (not today): ${p.title}")
+                    AppLogger.w(TAG, "Dropping stale pending download (not today): ${p.title}")
                     downloadManager.clearPending(p.episodeUrl)
                     continue
                 }
@@ -80,7 +82,7 @@ class AutoDownloadWorker(
                 val job = async {
                     val episode = Episode(title=p.title, date=p.date, time=p.time, url=p.episodeUrl, showName=p.showName)
                     try {
-                        Log.d(TAG, "Retrying pending download: ${episode.title} (Attempt ${p.attemptCount + 1})")
+                        AppLogger.d(TAG, "Retrying pending download: ${episode.title} (Attempt ${p.attemptCount + 1})")
                         downloadManager.markPending(episode, p.directUrl)
                         DownloadStateTracker.addDownload(episode.url, episode.title, episode.showName)
                         
@@ -105,12 +107,12 @@ class AutoDownloadWorker(
                                 downloaded.add(episode.showName)
                             }
                         }
-                        Log.d(TAG, "Done retrying: ${episode.title}")
+                        AppLogger.d(TAG, "Done retrying: ${episode.title}")
                         
                         kotlinx.coroutines.delay(1500)
                         DownloadStateTracker.removeDownload(episode.url)
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to retry download ${episode.title}: ${e.message}")
+                        AppLogger.e(TAG, "Failed to retry download ${episode.title}: ${e.message}")
                         downloadManager.markFailed(episode.url)
                         DownloadStateTracker.updateError(episode.url, e.message)
                         kotlinx.coroutines.delay(4000)
@@ -124,7 +126,7 @@ class AutoDownloadWorker(
             if (!isRetryOnly) {
                 for (show in enabledShows) {
                     try {
-                        Log.d(TAG, "Fetching episodes for ${show.displayName}")
+                        AppLogger.d(TAG, "Fetching episodes for ${show.displayName}")
                         val episodes = Scraper.fetchEpisodes(show)
 
                         // Only download today's episodes
@@ -133,17 +135,17 @@ class AutoDownloadWorker(
                         for (episode in recent) {
                             // Skip if already downloaded, currently pending retry, or previously auto-deleted
                             if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
-                                Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                                AppLogger.d(TAG, "Already downloaded or pending retry: ${episode.title}")
                                 continue
                             }
                             if (deletedUrls.contains(episode.url)) {
-                                Log.w(TAG, "Skipping tombstoned episode (was auto-deleted): ${episode.title}")
+                                AppLogger.w(TAG, "Skipping tombstoned episode (was auto-deleted): ${episode.title}")
                                 continue
                             }
 
                             val job = async {
                                 try {
-                                    Log.d(TAG, "Downloading: ${episode.title}")
+                                    AppLogger.d(TAG, "Downloading: ${episode.title}")
                                     downloadManager.markPending(episode)
                                     DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
                                     
@@ -158,12 +160,12 @@ class AutoDownloadWorker(
                                             downloaded.add(show.displayName)
                                         }
                                     }
-                                    Log.d(TAG, "Done: ${episode.title}")
+                                    AppLogger.d(TAG, "Done: ${episode.title}")
                                     
                                     kotlinx.coroutines.delay(1500)
                                     DownloadStateTracker.removeDownload(episode.url)
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Failed to download ${episode.title}: ${e.message}")
+                                    AppLogger.e(TAG, "Failed to download ${episode.title}: ${e.message}")
                                     downloadManager.markFailed(episode.url)
                                     DownloadStateTracker.updateError(episode.url, e.message)
                                     kotlinx.coroutines.delay(4000)
@@ -174,7 +176,7 @@ class AutoDownloadWorker(
                         }
 
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to fetch ${show.displayName}: ${e.message}")
+                        AppLogger.e(TAG, "Failed to fetch ${show.displayName}: ${e.message}")
                     }
                 }
             }
@@ -182,7 +184,7 @@ class AutoDownloadWorker(
             val enabledStvrShows = settings.enabledStvrShows()
             for (show in enabledStvrShows) {
                 try {
-                    Log.d(TAG, "Fetching episodes for STVR show: ${show.displayName}")
+                    AppLogger.d(TAG, "Fetching episodes for STVR show: ${show.displayName}")
                     val episodes = StvScraper.fetchEpisodes(show, maxPages = 1)
 
                     val minDurationSeconds = settings.getMinDurationMinutes(show.name) * 60
@@ -190,7 +192,7 @@ class AutoDownloadWorker(
                     val recent = episodes.filter { it.date == today }
                         .filter {
                             if (it.durationSeconds > 0 && it.durationSeconds < minDurationSeconds) {
-                                Log.i(TAG, "Skipping short STVR video (duration ${it.durationSeconds}s < ${minDurationSeconds}s): ${it.title}")
+                                AppLogger.i(TAG, "Skipping short STVR video (duration ${it.durationSeconds}s < ${minDurationSeconds}s): ${it.title}")
                                 false
                             } else {
                                 true
@@ -200,17 +202,17 @@ class AutoDownloadWorker(
                     for (episode in recent) {
                         // Skip if already downloaded or currently retrying
                         if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
-                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            AppLogger.d(TAG, "Already downloaded or pending retry: ${episode.title}")
                             continue
                         }
                         if (deletedUrls.contains(episode.url)) {
-                            Log.w(TAG, "Skipping tombstoned STVR episode (was auto-deleted): ${episode.title}")
+                            AppLogger.w(TAG, "Skipping tombstoned STVR episode (was auto-deleted): ${episode.title}")
                             continue
                         }
 
                         val job = async {
                             try {
-                                Log.d(TAG, "Downloading STVR: ${episode.title}")
+                                AppLogger.d(TAG, "Downloading STVR: ${episode.title}")
                                 downloadManager.markPending(episode)
                                 DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
 
@@ -225,12 +227,12 @@ class AutoDownloadWorker(
                                         downloaded.add(show.displayName)
                                     }
                                 }
-                                Log.d(TAG, "Done STVR: ${episode.title}")
+                                AppLogger.d(TAG, "Done STVR: ${episode.title}")
 
                                 kotlinx.coroutines.delay(1500)
                                 DownloadStateTracker.removeDownload(episode.url)
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to download STVR ${episode.title}: ${e.message}")
+                                AppLogger.e(TAG, "Failed to download STVR ${episode.title}: ${e.message}")
                                 downloadManager.markFailed(episode.url)
                                 DownloadStateTracker.updateError(episode.url, e.message)
                                 kotlinx.coroutines.delay(4000)
@@ -240,7 +242,7 @@ class AutoDownloadWorker(
                         jobs.add(job)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to fetch STVR ${show.displayName}: ${e.message}")
+                    AppLogger.e(TAG, "Failed to fetch STVR ${show.displayName}: ${e.message}")
                 }
             }
             
@@ -248,24 +250,24 @@ class AutoDownloadWorker(
             val enabledTyzdenShows = settings.enabledTyzdenShows()
             for (show in enabledTyzdenShows) {
                 try {
-                    Log.d(TAG, "Fetching episodes for .týždeň show: ${show.displayName}")
+                    AppLogger.d(TAG, "Fetching episodes for .týždeň show: ${show.displayName}")
                     val episodes = TyzdenScraper.fetchEpisodes(show, maxPages = 1)
                     val recent = episodes.filter { it.date == today }
 
                     for (episode in recent) {
                         // Skip if already downloaded or currently retrying
                         if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
-                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            AppLogger.d(TAG, "Already downloaded or pending retry: ${episode.title}")
                             continue
                         }
                         if (deletedUrls.contains(episode.url)) {
-                            Log.w(TAG, "Skipping tombstoned .týždeň episode (was auto-deleted): ${episode.title}")
+                            AppLogger.w(TAG, "Skipping tombstoned .týždeň episode (was auto-deleted): ${episode.title}")
                             continue
                         }
 
                         val job = async {
                             try {
-                                Log.d(TAG, "Downloading .týždeň: ${episode.title}")
+                                AppLogger.d(TAG, "Downloading .týždeň: ${episode.title}")
                                 downloadManager.markPending(episode)
                                 DownloadStateTracker.addDownload(episode.url, episode.title, show.displayName)
 
@@ -280,12 +282,12 @@ class AutoDownloadWorker(
                                         downloaded.add(show.displayName)
                                     }
                                 }
-                                Log.d(TAG, "Done .týždeň: ${episode.title}")
+                                AppLogger.d(TAG, "Done .týždeň: ${episode.title}")
 
                                 kotlinx.coroutines.delay(1500)
                                 DownloadStateTracker.removeDownload(episode.url)
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to download .týždeň ${episode.title}: ${e.message}")
+                                AppLogger.e(TAG, "Failed to download .týždeň ${episode.title}: ${e.message}")
                                 downloadManager.markFailed(episode.url)
                                 DownloadStateTracker.updateError(episode.url, e.message)
                                 kotlinx.coroutines.delay(4000)
@@ -295,7 +297,7 @@ class AutoDownloadWorker(
                         jobs.add(job)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to fetch .týždeň ${show.displayName}: ${e.message}")
+                    AppLogger.e(TAG, "Failed to fetch .týždeň ${show.displayName}: ${e.message}")
                 }
             }
 
@@ -303,7 +305,7 @@ class AutoDownloadWorker(
             val enabledYtChannels = settings.enabledYouTubeChannels()
             for (channel in enabledYtChannels) {
                 try {
-                    Log.d(TAG, "Fetching episodes for YouTube channel: ${channel.displayName}")
+                    AppLogger.d(TAG, "Fetching episodes for YouTube channel: ${channel.displayName}")
                     val episodes = YouTubeScraper.fetchEpisodes(channel)
 
                     val minDurationSeconds = settings.getMinDurationMinutes(channel.name) * 60
@@ -311,7 +313,7 @@ class AutoDownloadWorker(
                     val recent = episodes.filter { it.date == today }
                         .filter {
                             if (it.durationSeconds > 0 && it.durationSeconds < minDurationSeconds) {
-                                Log.i(TAG, "Skipping short YouTube video (duration ${it.durationSeconds}s < ${minDurationSeconds}s): ${it.title}")
+                                AppLogger.i(TAG, "Skipping short YouTube video (duration ${it.durationSeconds}s < ${minDurationSeconds}s): ${it.title}")
                                 false
                             } else {
                                 true
@@ -320,17 +322,17 @@ class AutoDownloadWorker(
 
                     for (episode in recent) {
                         if (downloadManager.isDownloaded(episode.url) || pendingUrls.contains(episode.url)) {
-                            Log.d(TAG, "Already downloaded or pending retry: ${episode.title}")
+                            AppLogger.d(TAG, "Already downloaded or pending retry: ${episode.title}")
                             continue
                         }
                         if (deletedUrls.contains(episode.url)) {
-                            Log.w(TAG, "Skipping tombstoned YouTube episode (was auto-deleted): ${episode.title}")
+                            AppLogger.w(TAG, "Skipping tombstoned YouTube episode (was auto-deleted): ${episode.title}")
                             continue
                         }
 
                         val job = async {
                             try {
-                                Log.d(TAG, "Downloading YouTube: ${episode.title}")
+                                AppLogger.d(TAG, "Downloading YouTube: ${episode.title}")
                                 downloadManager.markPending(episode)
                                 DownloadStateTracker.addDownload(episode.url, episode.title, channel.displayName)
 
@@ -345,12 +347,12 @@ class AutoDownloadWorker(
                                         downloaded.add(channel.displayName)
                                     }
                                 }
-                                Log.d(TAG, "Done YouTube: ${episode.title}")
+                                AppLogger.d(TAG, "Done YouTube: ${episode.title}")
 
                                 kotlinx.coroutines.delay(1500)
                                 DownloadStateTracker.removeDownload(episode.url)
                             } catch (e: Exception) {
-                                Log.e(TAG, "Failed to download YouTube ${episode.title}: ${e.message}")
+                                AppLogger.e(TAG, "Failed to download YouTube ${episode.title}: ${e.message}")
                                 downloadManager.markFailed(episode.url)
                                 DownloadStateTracker.updateError(episode.url, e.message)
                                 kotlinx.coroutines.delay(4000)
@@ -360,7 +362,7 @@ class AutoDownloadWorker(
                         jobs.add(job)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to fetch YouTube ${channel.displayName}: ${e.message}")
+                    AppLogger.e(TAG, "Failed to fetch YouTube ${channel.displayName}: ${e.message}")
                 }
             }
 
@@ -373,7 +375,7 @@ class AutoDownloadWorker(
         // even if the app is not running.
         val stillPending = downloadManager.loadPendingDownloads().any { it.date == todayString() }
         if (stillPending) {
-            Log.d(TAG, "Some downloads still pending — scheduling WiFi retry")
+            AppLogger.d(TAG, "Some downloads still pending — scheduling WiFi retry")
             scheduleWifiRetry(applicationContext)
         }
 
@@ -381,7 +383,7 @@ class AutoDownloadWorker(
             NotificationHelper.notifyDownloadsComplete(applicationContext, downloaded.size, downloaded)
         }
 
-        Log.d(TAG, "AutoDownloadWorker done — downloaded ${downloaded.size} episodes")
+        AppLogger.d(TAG, "AutoDownloadWorker done — downloaded ${downloaded.size} episodes")
         return Result.success()
     }
 
@@ -413,7 +415,7 @@ class AutoDownloadWorker(
                 ExistingWorkPolicy.KEEP, // Don't reset delay if one is already queued
                 request
             )
-            Log.d(TAG, "WiFi retry scheduled (fires 5 min after WiFi reconnects), wifiOnly=$wifiOnly")
+            AppLogger.d(TAG, "WiFi retry scheduled (fires 5 min after WiFi reconnects), wifiOnly=$wifiOnly")
         }
 
         /**
@@ -438,7 +440,7 @@ class AutoDownloadWorker(
                 ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
-            Log.d(TAG, "Scheduled periodic work every $intervalHours hour(s), wifiOnly=$wifiOnly")
+            AppLogger.d(TAG, "Scheduled periodic work every $intervalHours hour(s), wifiOnly=$wifiOnly")
         }
 
         /**
@@ -461,7 +463,7 @@ class AutoDownloadWorker(
                 ExistingWorkPolicy.REPLACE, // always re-run so new episodes are caught on every app open
                 request
             )
-            Log.d(TAG, "Enqueued immediate download check, wifiOnly=$wifiOnly")
+            AppLogger.d(TAG, "Enqueued immediate download check, wifiOnly=$wifiOnly")
         }
 
         fun cancel(context: Context) {
@@ -469,7 +471,7 @@ class AutoDownloadWorker(
             wm.cancelUniqueWork(WORK_NAME)
             wm.cancelUniqueWork(WORK_NAME_IMMEDIATE)
             wm.cancelUniqueWork(WORK_NAME_RETRY)
-            Log.d(TAG, "Cancelled all auto-download work")
+            AppLogger.d(TAG, "Cancelled all auto-download work")
         }
 
         private fun todayString(): String {

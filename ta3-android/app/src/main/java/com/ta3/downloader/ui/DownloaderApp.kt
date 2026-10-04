@@ -208,6 +208,8 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onMoveSection = viewModel::moveSection,
                 onToggleSection = viewModel::toggleSection,
                 onToggleItem = viewModel::toggleItem,
+                onToggleLogging = viewModel::toggleLogging,
+                onClearLogs = viewModel::clearLogs,
                 modifier = Modifier.padding(innerPadding)
             )
         }

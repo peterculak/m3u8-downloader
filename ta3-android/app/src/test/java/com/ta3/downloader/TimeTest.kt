@@ -41,6 +41,18 @@ class TimeTest {
         assertEquals("2026-07-19", YouTubeScraper.parseRelativeDate("Streamed 3 hours ago", referenceCal.clone() as java.util.Calendar))
         assertEquals("2026-07-19", YouTubeScraper.parseRelativeDate("Premiéra pred 10 hodinami", referenceCal.clone() as java.util.Calendar))
         
+        // Absolute dates with streamed/live prefixes should fall back to 1970-01-01 so they are skipped,
+        // rather than incorrectly returning 'today'.
+        assertEquals("1970-01-01", YouTubeScraper.parseRelativeDate("Streamed on Aug 28", referenceCal.clone() as java.util.Calendar))
+        assertEquals("1970-01-01", YouTubeScraper.parseRelativeDate("Streamované 15. augusta", referenceCal.clone() as java.util.Calendar))
+        
+        // YouTube compact format
+        assertEquals("2026-07-19", YouTubeScraper.parseRelativeDate("Streamed 5h ago", referenceCal.clone() as java.util.Calendar))
+        assertEquals("2026-07-19", YouTubeScraper.parseRelativeDate("12min ago", referenceCal.clone() as java.util.Calendar))
+        assertEquals("2026-07-12", YouTubeScraper.parseRelativeDate("Streamed 1w ago", referenceCal.clone() as java.util.Calendar))
+        assertEquals("2026-07-16", YouTubeScraper.parseRelativeDate("3d ago", referenceCal.clone() as java.util.Calendar))
+        assertEquals("2026-04-19", YouTubeScraper.parseRelativeDate("Streamed 3mo ago", referenceCal.clone() as java.util.Calendar))
+
         // Invalid or fallback cases should return 1970-01-01
         assertEquals("1970-01-01", YouTubeScraper.parseRelativeDate("Televízia JOJ a JOJ 24", referenceCal.clone() as java.util.Calendar))
     }

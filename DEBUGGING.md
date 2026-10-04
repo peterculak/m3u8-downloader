@@ -102,3 +102,41 @@ just ta3
 | stdin inherited from TTY | Child blocks waiting for terminal input | Use `stdio: ['ignore', 'pipe', 'pipe']` |
 | `just` wrapping a child | `just` may buffer stdout/stderr of its child | Spawn the tool directly instead of via `just` |
 | Testing with `\| tee` or `\| head` | Kills child via SIGPIPE; ANSI cursor codes written literally | Test in a real TTY for display, use log files only for exit codes / file creation |
+
+---
+
+## Android: pulling app logs from the phone
+
+1. In the app: Settings → "Ladenie aplikácie (Logging)" → on. Reproduce the problem
+   (refresh the channel or let the auto-download worker run).
+2. Pull the file over adb (phone must show in `adb devices`, wireless debugging is fine):
+
+```
+adb pull /sdcard/Android/data/com.ta3.downloader/files/app_logs.txt .
+```
+
+3. Useful greps:
+
+```
+grep "rawTime" app_logs.txt        # exact time text YouTube returned + parsed date
+grep "fetchEpisodes" app_logs.txt  # per-channel totals and matchToday count
+```
+
+Notes:
+- Log only gets written if the code logs through `AppLogger` (not `android.util.Log`) and
+  logging is enabled. `YouTubeScraper` and `AutoDownloadWorker` use `AppLogger`.
+- Workers call `AppLogger.init()` + read `settings.loggingEnabled` in `doWork()`, so
+  background runs are logged too.
+
+## Case study: all dates show 1970-01-01 (Oct 2026, Braňo Závodský)
+
+**Symptom:** every episode of a YouTube channel gets date `1970-01-01` and is skipped.
+**Cause:** YouTube changed the relative-time text to a compact format
+(`3mo ago`, `2w ago`, `9d ago`, `Streamed 3mo ago`). `YouTubeScraper.parseRelativeDate`
+only knew long words ("months", "týždňami"…), so anything unrecognised fell through to 1970.
+**How it was found:** pulled `app_logs.txt`, looked at the `rawTime='…'` lines. Guessing at
+the parser without the real strings (first attempt: the live/streamed `contains` check) did
+not fix it.
+**Fix:** compact-unit branch (`y|yr|mo|w|d|h|hr|min|m|s|sec` + `ago`) at the top of
+`parseRelativeDate`, with tests in `TimeTest.kt`.
+**If it recurs:** pull the log first, look at `rawTime`, add the new format + a test.

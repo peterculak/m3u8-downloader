@@ -88,6 +88,11 @@ val TA3_SHOWS = listOf(
         url = "https://www.ta3.com/tema-dna"
     ),
     Show(
+        name = "tema",
+        displayName = "Téma",
+        url = "https://www.ta3.com/tema"
+    ),
+    Show(
         name = "kral-na-tahu",
         displayName = "Kráľ na ťahu",
         url = "https://www.ta3.com/kral-na-tahu"
@@ -125,7 +130,7 @@ val STVR_SHOWS = listOf(
     Show(
         name = "komentare-dna",
         displayName = "Komentáre dňa",
-        url = "https://www.stvr.sk/televizia/archiv/20116"
+        url = "https://www.stvr.sk/televizia/archiv/23659"
     ),
     Show(
         name = "o-5-minut-12",
@@ -135,7 +140,7 @@ val STVR_SHOWS = listOf(
     Show(
         name = "sobotne-dialogy",
         displayName = "Sobotné dialógy",
-        url = "https://www.stvr.sk/televizia/archiv/12354"
+        url = "https://www.stvr.sk/televizia/archiv/23649"
     )
 )
 
@@ -196,7 +201,8 @@ object CustomChannelManager {
             if (!customChannelsFile.exists()) emptyList()
             else {
                 val type = object : TypeToken<List<YouTubeChannel>>() {}.type
-                gson.fromJson(customChannelsFile.readText(), type) ?: emptyList()
+                val list: List<YouTubeChannel>? = gson.fromJson(customChannelsFile.readText(), type)
+                list?.filter { it.name != null } ?: emptyList()
             }
         } catch (e: Exception) {
             emptyList()

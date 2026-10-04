@@ -80,7 +80,7 @@ class DownloadEpisodeWorker(
             
             Result.success(workDataOf(KEY_PROGRESS to 1f, KEY_STATUS to "done", KEY_TITLE to title))
         } catch (e: Exception) {
-            Log.e(TAG, "Download failed: $title — ${e.message}")
+            AppLogger.e(TAG, "Download failed: $title — ${e.message}")
             downloadManager.markFailed(episodeUrl)
             // Schedule a WiFi-triggered retry — WorkManager will fire it automatically
             // when the phone gets a good WiFi connection, even if the app is not running.

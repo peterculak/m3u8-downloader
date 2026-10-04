@@ -40,7 +40,7 @@ object YouTubeScraper {
                 if (!initialized) {
                     NewPipe.init(DownloaderImpl.getInstance())
                     initialized = true
-                    Log.d(TAG, "NewPipe initialized")
+                    AppLogger.d(TAG, "NewPipe initialized")
                 }
             }
         }
@@ -80,7 +80,7 @@ object YouTubeScraper {
                 "${channel.channelUrl.removeSuffix("/")}/${channel.tab}"
             }
         }
-        Log.d(TAG, "Fetching streams HTML: $streamsUrl")
+        AppLogger.d(TAG, "Fetching streams HTML: $streamsUrl")
 
         val request = Request.Builder()
             .url(streamsUrl)
@@ -93,7 +93,7 @@ object YouTubeScraper {
             if (!response.isSuccessful) throw Exception("HTTP ${response.code} fetching $streamsUrl")
             response.body?.string() ?: ""
         }
-        Log.d(TAG, "fetchEpisodes: channel=${channel.name} today=${todayString()} htmlBytes=${html.length}")
+        AppLogger.d(TAG, "fetchEpisodes: channel=${channel.name} today=${todayString()} htmlBytes=${html.length}")
 
         val episodes = mutableListOf<Episode>()
 
@@ -113,11 +113,11 @@ object YouTubeScraper {
                 if (chunk.contains("LIVE_BADGE", ignoreCase = true) ||
                     chunk.contains("\"style\":\"LIVE\"", ignoreCase = true) ||
                     chunk.contains("\"isLive\":true", ignoreCase = true)) {
-                    Log.d(TAG, "  $videoId: no time text found but LIVE badge detected — treating as today")
+                    AppLogger.d(TAG, "  $videoId: no time text found but LIVE badge detected — treating as today")
                     return "live"
                 }
             }
-            Log.w(TAG, "  $videoId: no time found anywhere — will resolve to 1970-01-01 and be skipped")
+            AppLogger.w(TAG, "  $videoId: no time found anywhere — will resolve to 1970-01-01 and be skipped")
             return ""
         }
         
@@ -137,6 +137,10 @@ object YouTubeScraper {
                 } else if (element.isJsonObject) {
                     val obj = element.asJsonObject
                     if (obj.has("lockupViewModel")) {
+                        if (obj.toString().contains("BADGE_STYLE_TYPE_MEMBERS_ONLY") || obj.toString().contains("Len pre členov")) {
+                            AppLogger.d(TAG, "Skipping members-only video (lockupViewModel)")
+                            continue
+                        }
                         try {
                             val lockup = obj.getAsJsonObject("lockupViewModel")
                             val title = lockup.getAsJsonObject("metadata")
@@ -181,7 +185,7 @@ object YouTubeScraper {
                                     val resolvedTime = resolveRelativeTime(relativeTime, videoId)
                                     val parsedDate = parseRelativeDate(resolvedTime)
                                     val durationSeconds = extractDurationSeconds(obj)
-                                    Log.d(TAG, "  lockup videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
+                                    AppLogger.d(TAG, "  lockup videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
                                     episodes.add(
                                         Episode(
                                             title = title,
@@ -196,6 +200,10 @@ object YouTubeScraper {
                             }
                         } catch (e: Exception) {}
                     } else if (obj.has("videoWithContextRenderer")) {
+                        if (obj.toString().contains("BADGE_STYLE_TYPE_MEMBERS_ONLY") || obj.toString().contains("Len pre členov")) {
+                            AppLogger.d(TAG, "Skipping members-only video (videoWithContextRenderer)")
+                            continue
+                        }
                         try {
                             val renderer = obj.getAsJsonObject("videoWithContextRenderer")
                             val videoId = renderer.get("videoId").asString
@@ -221,7 +229,7 @@ object YouTubeScraper {
                                 val resolvedTime = resolveRelativeTime(relativeTime, videoId)
                                 val parsedDate = parseRelativeDate(resolvedTime)
                                 val durationSeconds = extractDurationSeconds(obj)
-                                Log.d(TAG, "  videoWithContext videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
+                                AppLogger.d(TAG, "  videoWithContext videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
                                 episodes.add(
                                     Episode(
                                         title = title,
@@ -235,6 +243,10 @@ object YouTubeScraper {
                             }
                         } catch (e: Exception) {}
                     } else if (obj.has("videoRenderer")) {
+                        if (obj.toString().contains("BADGE_STYLE_TYPE_MEMBERS_ONLY") || obj.toString().contains("Len pre členov")) {
+                            AppLogger.d(TAG, "Skipping members-only video (videoRenderer)")
+                            continue
+                        }
                         try {
                             val renderer = obj.getAsJsonObject("videoRenderer")
                             val videoId = renderer.get("videoId").asString
@@ -260,7 +272,7 @@ object YouTubeScraper {
                                 val resolvedTime = resolveRelativeTime(relativeTime, videoId)
                                 val parsedDate = parseRelativeDate(resolvedTime)
                                 val durationSeconds = extractDurationSeconds(obj)
-                                Log.d(TAG, "  videoRenderer videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
+                                AppLogger.d(TAG, "  videoRenderer videoId=$videoId rawTime='$relativeTime' resolved='$resolvedTime' date=$parsedDate dur=$durationSeconds title='${title.take(60)}'")
                                 episodes.add(
                                     Episode(
                                         title = title,
@@ -279,14 +291,14 @@ object YouTubeScraper {
                 }
             }
         } else {
-            Log.w(TAG, "ytInitialData not found on streams page — channel=${channel.name}")
+            AppLogger.w(TAG, "ytInitialData not found on streams page — channel=${channel.name}")
         }
 
         val todayCount = episodes.count { it.date == todayString() }
-        Log.d(TAG, "fetchEpisodes done: channel=${channel.name} total=${episodes.size} matchToday=$todayCount today=${todayString()}")
+        AppLogger.d(TAG, "fetchEpisodes done: channel=${channel.name} total=${episodes.size} matchToday=$todayCount today=${todayString()}")
         if (todayCount == 0 && episodes.isNotEmpty()) {
             val mostRecent = episodes.map { it.date }.filter { it != "1970-01-01" }.maxOrNull() ?: "none"
-            Log.w(TAG, "  No episodes match today — most recent date is $mostRecent")
+            AppLogger.w(TAG, "  No episodes match today — most recent date is $mostRecent")
         }
         episodes
     }
@@ -352,7 +364,7 @@ object YouTubeScraper {
      */
     suspend fun resolveAudioUrlAndDuration(videoUrl: String): Pair<String, Long> = withContext(Dispatchers.IO) {
         ensureInitialized()
-        Log.d(TAG, "Resolving audio URL for: $videoUrl")
+        AppLogger.d(TAG, "Resolving audio URL for: $videoUrl")
 
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
         val audioStreams = streamInfo.audioStreams
@@ -382,7 +394,7 @@ object YouTubeScraper {
                  .replace(Regex("\\?range=[0-9]+-[0-9]+&"), "?")
                  .replace(Regex("\\?range=[0-9]+-[0-9]+$"), "")
 
-        Log.d(TAG, "Resolved audio URL (bitrate=${bestStream.averageBitrate}): ${url.take(80)}...")
+        AppLogger.d(TAG, "Resolved audio URL (bitrate=${bestStream.averageBitrate}): ${url.take(80)}...")
         Pair(url, durationMs)
     }
 
@@ -391,7 +403,7 @@ object YouTubeScraper {
      */
     suspend fun resolveHighestQualityVideoAndAudio(videoUrl: String): Triple<String, String, Long> = withContext(Dispatchers.IO) {
         ensureInitialized()
-        Log.d(TAG, "Resolving highest quality video and audio URLs for: $videoUrl")
+        AppLogger.d(TAG, "Resolving highest quality video and audio URLs for: $videoUrl")
 
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
         val durationMs = streamInfo.duration * 1000L
@@ -437,8 +449,8 @@ object YouTubeScraper {
                    .replace(Regex("\\?range=[0-9]+-[0-9]+&"), "?")
                    .replace(Regex("\\?range=[0-9]+-[0-9]+$"), "")
 
-        Log.d(TAG, "Resolved video URL (resolution=${bestVideo.resolution}): ${vUrl.take(80)}...")
-        Log.d(TAG, "Resolved audio URL (bitrate=${bestAudio.averageBitrate}): ${aUrl.take(80)}...")
+        AppLogger.d(TAG, "Resolved video URL (resolution=${bestVideo.resolution}): ${vUrl.take(80)}...")
+        AppLogger.d(TAG, "Resolved audio URL (bitrate=${bestAudio.averageBitrate}): ${aUrl.take(80)}...")
         
         Triple(vUrl, aUrl, durationMs)
     }
@@ -460,7 +472,7 @@ object YouTubeScraper {
      */
     suspend fun resolveSharedVideoDetails(videoUrl: String): Episode = withContext(Dispatchers.IO) {
         ensureInitialized()
-        Log.d(TAG, "Resolving shared video details for: $videoUrl")
+        AppLogger.d(TAG, "Resolving shared video details for: $videoUrl")
 
         val streamInfo = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
         
@@ -513,7 +525,17 @@ object YouTubeScraper {
             var num = Regex("""(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
             if (text.contains("predvčerom")) num = 2
             
-            if (text.contains("year") || text.contains("rok") || text.contains("rokmi") || text.contains("roky")) {
+            val abbrev = Regex("""(\d+)\s*(y|yr|mo|w|d|h|hr|min|m|s|sec)\s+ago\b""").find(text)
+            if (abbrev != null) {
+                // YouTube's compact format, e.g. "3mo ago", "2w ago", "9d ago", "5h ago"
+                when (abbrev.groupValues[2]) {
+                    "y", "yr" -> cal.add(java.util.Calendar.YEAR, -num)
+                    "mo" -> cal.add(java.util.Calendar.MONTH, -num)
+                    "w" -> cal.add(java.util.Calendar.DAY_OF_YEAR, -(num * 7))
+                    "d" -> cal.add(java.util.Calendar.DAY_OF_YEAR, -num)
+                    else -> {} // hours/minutes/seconds: today
+                }
+            } else if (text.contains("year") || text.contains("rok") || text.contains("rokmi") || text.contains("roky")) {
                 cal.add(java.util.Calendar.YEAR, -num)
             } else if (text.contains("month") || text.contains("mesiac") || text.contains("mesiacmi") || text.contains("mesiace")) {
                 cal.add(java.util.Calendar.MONTH, -num)
@@ -527,8 +549,8 @@ object YouTubeScraper {
             } else if (text.contains("hour") || text.contains("hodin") || text.contains("minute") ||
                 text.contains("minút") || text.contains("second") || text.contains("sekund") || text.contains("dnes")) {
                 // Keep as today
-            } else if (text.contains("live") || text.contains("naživo") || text.contains("premiéra") ||
-                text.contains("premiere") || text.contains("streamed") || text.contains("streamované")) {
+            } else if (text.trim().replace(Regex("""^(streamed|streamované|premiered|premiéra|premiere)\s+"""), "").trim()
+                    .let { it in setOf("live", "live now", "naživo", "streamed", "premiere", "premiéra", "streamované") }) {
                 // Keep as today
             } else {
                 return "1970-01-01"

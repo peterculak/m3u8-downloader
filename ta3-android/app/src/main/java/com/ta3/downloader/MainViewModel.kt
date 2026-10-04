@@ -48,6 +48,10 @@ data class UiState(
     val prehrajSearchResults: List<PrehrajMovie> = emptyList(),
     val prehrajSearching: Boolean = false,
     val prehrajSearchError: String? = null,
+    // Logging
+    val loggingEnabled: Boolean = false,
+    val logFileSize: Long = 0L,
+    val logFilePath: String = "",
     val prehrajLoginStatus: PrehrajLoginStatus = PrehrajLoginStatus.LOGGED_OUT,
     val prehrajLoginError: String? = null,
     val prehrajResolvedUrls: Map<String, String> = emptyMap(),
@@ -104,12 +108,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selectedYtChannel = getSortedYtChannels(settings).firstOrNull(),
             sectionOrder = settings.sectionOrder,
             prehrajEmail = settings.prehrajEmail,
-            prehrajPassword = settings.prehrajPassword
+            prehrajPassword = settings.prehrajPassword,
+            loggingEnabled = settings.loggingEnabled
         )
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
+        AppLogger.init(getApplication())
+        AppLogger.isEnabled = settings.loggingEnabled
+        refreshLogSize()
         loadRegistry()
         observeActiveDownloads()
         fetchEpisodes(_state.value.ta3Shows.firstOrNull() ?: TA3_SHOWS[0])
@@ -154,6 +162,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ─── Downloads ─────────────────────────────────────────────────────────────
+
+    // ─── Logging ───────────────────────────────────────────────────────────────
+    
+    fun toggleLogging(enabled: Boolean) {
+        settings.loggingEnabled = enabled
+        AppLogger.isEnabled = enabled
+        _state.update { it.copy(loggingEnabled = enabled) }
+    }
+    
+    fun clearLogs() {
+        AppLogger.clearLogs()
+        refreshLogSize()
+    }
+    
+    private fun refreshLogSize() {
+        val file = AppLogger.getLogFile()
+        if (file != null && file.exists()) {
+            _state.update { it.copy(
+                logFileSize = file.length(),
+                logFilePath = file.absolutePath
+            )}
+        } else {
+            _state.update { it.copy(
+                logFileSize = 0L,
+                logFilePath = file?.absolutePath ?: ""
+            )}
+        }
+    }
 
     private fun loadRegistry() {
         viewModelScope.launch {

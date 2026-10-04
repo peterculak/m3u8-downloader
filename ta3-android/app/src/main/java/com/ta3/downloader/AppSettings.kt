@@ -111,6 +111,10 @@ class AppSettings(context: Context) {
     var prehrajPassword: String
         get() = prefs.getString("prehraj_password", "hawkon-fybcab-1konQy") ?: "hawkon-fybcab-1konQy"
         set(value) = prefs.edit().putString("prehraj_password", value).apply()
+        
+    var loggingEnabled: Boolean
+        get() = prefs.getBoolean("logging_enabled", false)
+        set(value) = prefs.edit().putBoolean("logging_enabled", value).apply()
 
     companion object {
         private const val KEY_INTERVAL_HOURS = "sync_interval_hours"

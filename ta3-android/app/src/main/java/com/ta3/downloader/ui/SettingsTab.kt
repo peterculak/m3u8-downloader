@@ -63,6 +63,8 @@ fun SettingsTab(
     onToggleSection: (String) -> Unit,
     onToggleItem: (String) -> Unit,
     onTyzdenShowToggle: (String, Boolean) -> Unit,
+    onToggleLogging: (Boolean) -> Unit,
+    onClearLogs: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showEditDialog by remember { mutableStateOf<YouTubeChannel?>(null) }
@@ -108,7 +110,8 @@ fun SettingsTab(
         }
 
         items.add(SettingsRow.Static("add_yt"))
-                items.add(SettingsRow.Static("info_box"))
+        items.add(SettingsRow.Static("debug_settings"))
+        items.add(SettingsRow.Static("info_box"))
         items
     }
 
@@ -186,7 +189,9 @@ fun SettingsTab(
                                 onAddCustomChannel = onAddCustomChannel,
                                 onPrehrajEmailChange = onPrehrajEmailChange,
                                 onPrehrajPasswordChange = onPrehrajPasswordChange,
-                                onPrehrajLogin = onPrehrajLogin
+                                onPrehrajLogin = onPrehrajLogin,
+                                onToggleLogging = onToggleLogging,
+                                onClearLogs = onClearLogs
                             )
                         }
                     }
@@ -240,7 +245,9 @@ fun SettingsTab(
                                 onAddCustomChannel = onAddCustomChannel,
                                 onPrehrajEmailChange = onPrehrajEmailChange,
                                 onPrehrajPasswordChange = onPrehrajPasswordChange,
-                                onPrehrajLogin = onPrehrajLogin
+                                onPrehrajLogin = onPrehrajLogin,
+                                onToggleLogging = onToggleLogging,
+                                onClearLogs = onClearLogs
                             )
                         }
                     }
@@ -490,7 +497,9 @@ fun RenderStaticSection(
     onAddCustomChannel: (String, String) -> Unit,
     onPrehrajEmailChange: (String) -> Unit,
     onPrehrajPasswordChange: (String) -> Unit,
-    onPrehrajLogin: () -> Unit
+    onPrehrajLogin: () -> Unit,
+    onToggleLogging: (Boolean) -> Unit,
+    onClearLogs: () -> Unit
 ) {
     when (id) {
         "system_settings" -> {
@@ -595,6 +604,34 @@ fun RenderStaticSection(
                     Spacer(Modifier.height(12.dp))
                     Button(onClick = onPrehrajLogin, modifier = Modifier.fillMaxWidth()) {
                         Text("Prihlásiť sa")
+                    }
+                }
+            }
+        }
+
+        "debug_settings" -> {
+            Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Ladenie aplikácie (Logging)", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("Zapisovať podrobné chybové hlášky do súboru", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        }
+                        Switch(checked = state.loggingEnabled, onCheckedChange = onToggleLogging)
+                    }
+                    if (state.loggingEnabled || state.logFileSize > 0) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(state.logFilePath, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Veľkosť logov: ${formatFileSize(state.logFileSize)}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedButton(onClick = onClearLogs, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) {
+                                Icon(Icons.Outlined.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Vymazať záznamy", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
