@@ -68,6 +68,14 @@ data class UiState(
     val browseListCache: Map<String, Pair<List<TmdbItem>, Int>> = emptyMap(),
     val browseLoading: Boolean = false,
     val browseError: String? = null,
+    // Search: the search bar queries TMDB and shows poster tiles; "direct" = classic prehraj.to file search
+    val tmdbResults: List<TmdbItem> = emptyList(),
+    val tmdbSearching: Boolean = false,
+    val tmdbSearchError: String? = null,
+    val tmdbSearchQuery: String = "",
+    val tmdbPage: Int = 0,
+    val tmdbTotalPages: Int = 0,
+    val prehrajDirect: Boolean = false,
     val movieDetail: TmdbItem? = null,                  // full-screen movie / series page
     val seriesEpisode: SeriesEpisode? = null,           // episode whose streams are shown on a series page
     val movieDetails: TmdbDetails? = null,
@@ -114,6 +122,7 @@ class BrowseScroll {
     fun resetGrids() = grids.clear()
     /** Forget a saved position so the next visit starts at the top. */
     fun drop(key: String) { lists.remove(key) }
+    fun dropGrid(key: String) { grids.remove(key) }
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -325,12 +334,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setPrehrajSearchQuery(q: String) = _state.update {
-        it.copy(prehrajSearchQuery = q, prehrajSearchActive = it.prehrajSearchActive && q.isNotEmpty())
+        it.copy(prehrajSearchQuery = q, prehrajSearchActive = it.prehrajSearchActive && q.isNotEmpty(),
+            prehrajDirect = it.prehrajDirect && q.isNotEmpty())
     }
 
+    /** Search bar: look the title up on TMDB and show matching movies/series as tiles. */
     fun searchPrehraj() {
         val query = _state.value.prehrajSearchQuery.trim()
         if (query.isEmpty()) return
+        browseScroll.dropGrid("tmdbsearch:$query")
+        _state.update {
+            it.copy(prehrajSearchActive = true, prehrajDirect = false, tmdbSearchQuery = query, tmdbResults = emptyList(),
+                tmdbSearching = true, tmdbSearchError = null, tmdbPage = 0, tmdbTotalPages = 0)
+        }
+        loadMoreTmdbResults()
+    }
+
+    fun loadMoreTmdbResults() {
+        val st = _state.value
+        if (st.tmdbSearchQuery.isEmpty() || (st.tmdbSearching && st.tmdbResults.isNotEmpty())) return
+        if (st.tmdbPage > 0 && st.tmdbPage >= st.tmdbTotalPages) return
+        val page = st.tmdbPage + 1
+        val query = st.tmdbSearchQuery
+        viewModelScope.launch {
+            _state.update { it.copy(tmdbSearching = true) }
+            try {
+                val r = TmdbApi.search(query, page)
+                _state.update {
+                    if (it.tmdbSearchQuery != query) it   // user searched something else meanwhile
+                    else it.copy(
+                        tmdbResults = (it.tmdbResults + r.items).distinctBy { i -> "${i.mediaType}${i.id}" },
+                        tmdbPage = page, tmdbTotalPages = r.totalPages, tmdbSearching = false
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.e("MainViewModel", "TMDB search failed: ${e.message}")
+                _state.update { it.copy(tmdbSearching = false, tmdbSearchError = "Hľadanie zlyhalo: ${e.message}") }
+            }
+        }
+    }
+
+    /** Fallback: search prehraj.to files directly by the typed text. */
+    fun searchPrehrajDirect() {
+        val query = _state.value.prehrajSearchQuery.trim()
+        if (query.isEmpty()) return
+        _state.update { it.copy(prehrajDirect = true) }
         runPrehrajSearch(listOf(query))
     }
 
@@ -361,7 +409,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ─── Prehraj browse (TMDB) ─────────────────────────────────────────────────
 
     fun backToPrehrajBrowse() = _state.update {
-        it.copy(prehrajSearchActive = false, prehrajSearchQuery = "", prehrajSearchResults = emptyList(), prehrajSearchError = null)
+        it.copy(
+            prehrajSearchActive = false, prehrajSearchQuery = "", prehrajSearchResults = emptyList(), prehrajSearchError = null,
+            prehrajDirect = false, tmdbResults = emptyList(), tmdbSearchQuery = "", tmdbSearchError = null, tmdbSearching = false
+        )
     }
 
     fun setBrowseType(type: String) {

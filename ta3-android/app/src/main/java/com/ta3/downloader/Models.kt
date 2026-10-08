@@ -265,6 +265,8 @@ data class TmdbItem(
     val isTv: Boolean get() = mediaType == "tv"
 }
 
+data class TmdbSearchPage(val items: List<TmdbItem>, val page: Int, val totalPages: Int)
+
 data class TmdbDetails(
     val genres: List<String> = emptyList(),
     val runtimeMinutes: Int = 0,

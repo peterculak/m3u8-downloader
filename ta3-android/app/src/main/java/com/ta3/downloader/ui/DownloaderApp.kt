@@ -193,6 +193,8 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     onGenre = { viewModel.selectBrowseGenre(it) },
                     onLoadMoreGenre = { viewModel.loadMoreGenre() },
                     onOpenItem = { viewModel.openBrowseItem(it) },
+                    onSearchDirect = { viewModel.searchPrehrajDirect() },
+                    onLoadMoreSearch = { viewModel.loadMoreTmdbResults() },
                     scroll = viewModel.browseScroll
                 ),
                 onBackToBrowse = { viewModel.backToPrehrajBrowse() },
@@ -1325,7 +1327,7 @@ fun PrehrajTab(
                     }),
                     decorationBox = { inner ->
                         if (state.prehrajSearchQuery.isEmpty()) {
-                            Text("Hľadať filmy…",
+                            Text("Hľadať filmy a seriály…",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp,
                                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                         }
@@ -1363,6 +1365,7 @@ fun PrehrajTab(
         // Content
         when {
             !state.prehrajSearchActive -> PrehrajBrowse(state, browse, Modifier.weight(1f))
+            !state.prehrajDirect -> TmdbSearchResults(state, browse, Modifier.weight(1f))
             state.prehrajSearching -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

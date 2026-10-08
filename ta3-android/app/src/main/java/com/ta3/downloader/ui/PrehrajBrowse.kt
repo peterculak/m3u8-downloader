@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.*
@@ -37,6 +38,8 @@ class BrowseActions(
     val onGenre: (TmdbGenre?) -> Unit,
     val onLoadMoreGenre: () -> Unit,
     val onOpenItem: (TmdbItem) -> Unit,
+    val onSearchDirect: () -> Unit,
+    val onLoadMoreSearch: () -> Unit,
     val scroll: BrowseScroll
 )
 
@@ -146,7 +149,7 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
 }
 
 @Composable
-private fun PosterCard(item: TmdbItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun PosterCard(item: TmdbItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(modifier = modifier.clickable(onClick = onClick)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(2f / 3f)
@@ -185,3 +188,53 @@ private fun PosterCard(item: TmdbItem, modifier: Modifier = Modifier, onClick: (
 }
 
 private val Color_scrim = androidx.compose.ui.graphics.Color(0xAA000000)
+
+/** Search results from TMDB as poster tiles; tapping one opens its detail page. */
+@Composable
+fun TmdbSearchResults(state: UiState, actions: BrowseActions, modifier: Modifier = Modifier) {
+    val gridState = actions.scroll.grid("tmdbsearch:${state.tmdbSearchQuery}")
+    val far by remember(gridState) { derivedStateOf { gridState.firstVisibleItemIndex > 4 } }
+    ScrollToTopHost(showButton = far, onTop = { gridState.animateScrollToItem(0) }, modifier = modifier) {
+        when {
+            state.tmdbSearching && state.tmdbResults.isEmpty() ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            state.tmdbSearchError != null && state.tmdbResults.isEmpty() ->
+                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(state.tmdbSearchError, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    TextButton(onClick = actions.onSearchDirect) { Text("Hľadať priamo na prehraj.to") }
+                }
+            else -> LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Adaptive(110.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                    TextButton(onClick = actions.onSearchDirect, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                        Icon(Icons.Default.Search, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Hľadať „${state.tmdbSearchQuery}“ priamo na prehraj.to", fontSize = 13.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (state.tmdbResults.isEmpty()) {
+                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                        Text("Nič sa nenašlo pre „${state.tmdbSearchQuery}“", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 14.sp, modifier = Modifier.padding(vertical = 24.dp))
+                    }
+                }
+                itemsIndexed(state.tmdbResults, key = { _, i -> "${i.mediaType}${i.id}" }) { index, item ->
+                    if (index >= state.tmdbResults.size - 6) {
+                        LaunchedEffect(state.tmdbResults.size) { actions.onLoadMoreSearch() }
+                    }
+                    PosterCard(item, Modifier.fillMaxWidth()) { actions.onOpenItem(item) }
+                }
+            }
+        }
+    }
+}

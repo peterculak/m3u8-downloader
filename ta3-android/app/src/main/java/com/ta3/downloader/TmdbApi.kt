@@ -38,24 +38,36 @@ object TmdbApi {
     private fun JsonObject.str(key: String): String =
         get(key)?.takeIf { !it.isJsonNull }?.asString ?: ""
 
+    private fun parseItem(o: JsonObject, type: String): TmdbItem? {
+        val isTv = type == "tv"
+        val title = o.str(if (isTv) "name" else "title")
+        if (title.isEmpty()) return null
+        return TmdbItem(
+            id = o.get("id").asInt,
+            mediaType = type,
+            title = title,
+            originalTitle = o.str(if (isTv) "original_name" else "original_title").ifEmpty { title },
+            year = o.str(if (isTv) "first_air_date" else "release_date").take(4),
+            posterPath = o.str("poster_path").ifEmpty { null },
+            backdropPath = o.str("backdrop_path").ifEmpty { null },
+            overview = o.str("overview"),
+            rating = o.get("vote_average")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+        )
+    }
+
     private fun parseItems(json: JsonObject, type: String): List<TmdbItem> =
-        json.getAsJsonArray("results")?.mapNotNull { el ->
-            val o = el.asJsonObject
-            val isTv = type == "tv"
-            val title = o.str(if (isTv) "name" else "title")
-            if (title.isEmpty()) return@mapNotNull null
-            TmdbItem(
-                id = o.get("id").asInt,
-                mediaType = type,
-                title = title,
-                originalTitle = o.str(if (isTv) "original_name" else "original_title").ifEmpty { title },
-                year = o.str(if (isTv) "first_air_date" else "release_date").take(4),
-                posterPath = o.str("poster_path").ifEmpty { null },
-                backdropPath = o.str("backdrop_path").ifEmpty { null },
-                overview = o.str("overview"),
-                rating = o.get("vote_average")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
-            )
+        json.getAsJsonArray("results")?.mapNotNull { parseItem(it.asJsonObject, type) } ?: emptyList()
+
+    /** Movies and series matching [query] (people are dropped), most relevant first. */
+    suspend fun search(query: String, page: Int): TmdbSearchPage = withContext(Dispatchers.IO) {
+        val json = get("/search/multi", mapOf("query" to query, "page" to "$page", "include_adult" to "false"))
+        val items = json.getAsJsonArray("results")?.mapNotNull {
+            val o = it.asJsonObject
+            val type = o.str("media_type")
+            if (type == "movie" || type == "tv") parseItem(o, type) else null
         } ?: emptyList()
+        TmdbSearchPage(items, page, json.get("total_pages")?.takeIf { !it.isJsonNull }?.asInt ?: 1)
+    }
 
     suspend fun list(type: String, category: Category, page: Int = 1): List<TmdbItem> =
         withContext(Dispatchers.IO) {
