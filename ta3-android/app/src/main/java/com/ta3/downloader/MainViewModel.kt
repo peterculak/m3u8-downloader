@@ -386,7 +386,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun runPrehrajSearch(queries: List<String>, showResultsScreen: Boolean = true) {
         browseScroll.drop("prehraj:results")
         viewModelScope.launch {
-            _state.update { it.copy(prehrajSearchActive = showResultsScreen, prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
+            // Detail pages run this with showResultsScreen=false; they must not change which list sits behind them
+            _state.update { it.copy(prehrajSearchActive = if (showResultsScreen) true else it.prehrajSearchActive, prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
             try {
                 var shownQuery = queries.first()
                 var results = emptyList<PrehrajMovie>()
