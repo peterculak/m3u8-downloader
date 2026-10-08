@@ -37,9 +37,6 @@ class BrowseActions(
     val onGenre: (TmdbGenre?) -> Unit,
     val onLoadMoreGenre: () -> Unit,
     val onOpenItem: (TmdbItem) -> Unit,
-    val onCloseDetail: () -> Unit,
-    val onSeason: (Int) -> Unit,
-    val onEpisode: (Int, Int) -> Unit,
     val scroll: BrowseScroll
 )
 
@@ -53,11 +50,6 @@ private val rowTitles = listOf(
 @Composable
 fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = Modifier) {
     LaunchedEffect(state.browseType) { actions.onLoad() }
-
-    if (state.browseDetail != null) {
-        SeriesDetail(state, actions, modifier)
-        return
-    }
 
     val type = state.browseType
     Column(modifier = modifier.fillMaxSize()) {
@@ -193,63 +185,3 @@ private fun PosterCard(item: TmdbItem, modifier: Modifier = Modifier, onClick: (
 }
 
 private val Color_scrim = androidx.compose.ui.graphics.Color(0xAA000000)
-
-@Composable
-private fun SeriesDetail(state: UiState, actions: BrowseActions, modifier: Modifier = Modifier) {
-    val item = state.browseDetail ?: return
-    val seriesState = actions.scroll.list("series:${item.id}:${state.browseSelectedSeason}")
-    val seriesFar by remember(seriesState) { derivedStateOf { seriesState.firstVisibleItemIndex > 6 } }
-    ScrollToTopHost(showButton = seriesFar, onTop = { seriesState.animateScrollToItem(0) }, modifier = modifier) {
-    LazyColumn(
-        state = seriesState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = actions.onCloseDetail) { Icon(Icons.Default.ArrowBack, "Späť") }
-                Text(item.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 2,
-                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onBackground)
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PosterCard(item, Modifier.width(110.dp)) {}
-                Text(item.overview.ifEmpty { "Bez popisu." }, fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 9, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (state.browseSeasons.isNotEmpty()) {
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(state.browseSeasons, key = { it.number }) { s ->
-                        FilterChip(
-                            selected = state.browseSelectedSeason == s.number,
-                            onClick = { actions.onSeason(s.number) },
-                            label = { Text("Séria ${s.number}") }
-                        )
-                    }
-                }
-            }
-        }
-        if (state.browseEpisodes.isEmpty() && state.browseSeasons.isNotEmpty()) {
-            item { CircularProgressIndicator(Modifier.padding(16.dp).size(24.dp)) }
-        }
-        items(state.browseEpisodes, key = { it.number }) { ep ->
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .clickable { actions.onEpisode(state.browseSelectedSeason, ep.number) }
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("E%02d".format(ep.number), color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.width(40.dp))
-                Text(ep.name.ifEmpty { "Epizóda ${ep.number}" }, fontSize = 14.sp, maxLines = 2,
-                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onBackground)
-            }
-        }
-    }
-    }
-}

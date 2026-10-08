@@ -3,7 +3,9 @@ package com.ta3.downloader.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -38,10 +40,16 @@ fun MovieDetailScreen(
     onClose: () -> Unit,
     onExtractUrl: (PrehrajMovie) -> Unit,
     onDownload: (PrehrajMovie, String) -> Unit,
-    onCancelDownload: (String) -> Unit
+    onCancelDownload: (String) -> Unit,
+    onSeason: (Int) -> Unit,
+    onEpisode: (Int, Int) -> Unit,
+    onBackToEpisodes: () -> Unit
 ) {
     val item = state.movieDetail ?: return
-    BackHandler(onBack = onClose)
+    // On a series page, back from an episode's stream list returns to the episode list first
+    val goBack = { if (item.isTv && state.seriesEpisode != null) onBackToEpisodes() else onClose() }
+    BackHandler(onBack = goBack)
+    val showStreams = !item.isTv || state.seriesEpisode != null
 
     val context = LocalContext.current
     val bg = MaterialTheme.colorScheme.background
@@ -129,15 +137,62 @@ fun MovieDetailScreen(
                         Modifier.align(Alignment.TopCenter).offset(y = (-8).dp).width(40.dp).height(4.dp)
                             .clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                     )
+                    val ep = state.seriesEpisode
                     Text(
-                        if (state.prehrajSearching) "Hľadám streamy na prehraj.to…"
-                        else if (count > 0) "Streamy na prehraj.to ($count)" else "Streamy na prehraj.to",
-                        fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground
+                        when {
+                            !showStreams -> "Série a epizódy"
+                            state.prehrajSearching -> "Hľadám streamy na prehraj.to…"
+                            ep != null -> "S%02dE%02d%s • streamy (%d)".format(ep.season, ep.episode, if (ep.name.isNotBlank()) " – ${ep.name}" else "", count)
+                            count > 0 -> "Streamy na prehraj.to ($count)"
+                            else -> "Streamy na prehraj.to"
+                        },
+                        fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground
                     )
                 }
             }
 
-            when {
+            if (!showStreams) {
+                // Seasons + episodes (series): picking an episode runs the prehraj.to search for it
+                item {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().background(bg).padding(bottom = 8.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.browseSeasons, key = { it.number }) { sn ->
+                            FilterChip(
+                                selected = state.browseSelectedSeason == sn.number,
+                                onClick = { onSeason(sn.number) },
+                                label = { Text("Séria ${sn.number}", maxLines = 1) }
+                            )
+                        }
+                    }
+                }
+                if (state.browseEpisodes.isEmpty()) {
+                    item {
+                        Box(Modifier.fillMaxWidth().background(bg).padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                items(state.browseEpisodes, key = { "ep${it.number}" }) { ep ->
+                    Box(Modifier.fillMaxWidth().background(bg).padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                                .clickable { onEpisode(state.browseSelectedSeason, ep.number) }
+                                .padding(horizontal = 14.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("E%02d".format(ep.number), color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.width(44.dp))
+                            Text(ep.name.ifEmpty { "Epizóda ${ep.number}" }, fontSize = 14.sp, lineHeight = 20.sp, maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onBackground)
+                        }
+                    }
+                }
+            } else when {
                 state.prehrajSearching -> item {
                     Box(Modifier.fillMaxWidth().background(bg).padding(32.dp),
                         contentAlignment = Alignment.Center) {
@@ -188,7 +243,7 @@ fun MovieDetailScreen(
 
         // Back button
         IconButton(
-            onClick = onClose,
+            onClick = goBack,
             modifier = Modifier.statusBarsPadding().padding(8.dp).clip(CircleShape).background(Color(0x99000000))
         ) { Icon(Icons.Default.ArrowBack, "Späť", tint = Color.White) }
     }

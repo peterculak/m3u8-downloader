@@ -193,9 +193,6 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     onGenre = { viewModel.selectBrowseGenre(it) },
                     onLoadMoreGenre = { viewModel.loadMoreGenre() },
                     onOpenItem = { viewModel.openBrowseItem(it) },
-                    onCloseDetail = { viewModel.closeBrowseDetail() },
-                    onSeason = { viewModel.selectBrowseSeason(it) },
-                    onEpisode = { season, ep -> viewModel.searchBrowseEpisode(season, ep) },
                     scroll = viewModel.browseScroll
                 ),
                 onBackToBrowse = { viewModel.backToPrehrajBrowse() },
@@ -366,7 +363,10 @@ fun DownloaderApp(viewModel: MainViewModel) {
         onClose = { viewModel.closeMovieDetail() },
         onExtractUrl = { viewModel.extractPrehrajUrl(it) },
         onDownload = { movie, url -> viewModel.downloadPrehrajMovie(movie, url) },
-        onCancelDownload = { viewModel.cancelDownload(it) }
+        onCancelDownload = { viewModel.cancelDownload(it) },
+        onSeason = { viewModel.selectBrowseSeason(it) },
+        onEpisode = { season, ep -> viewModel.searchBrowseEpisode(season, ep) },
+        onBackToEpisodes = { viewModel.backToEpisodes() }
     )
     }
 }

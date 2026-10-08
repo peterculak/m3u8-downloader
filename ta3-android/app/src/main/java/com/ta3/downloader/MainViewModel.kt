@@ -68,8 +68,8 @@ data class UiState(
     val browseListCache: Map<String, Pair<List<TmdbItem>, Int>> = emptyMap(),
     val browseLoading: Boolean = false,
     val browseError: String? = null,
-    val browseDetail: TmdbItem? = null,                 // series detail screen
-    val movieDetail: TmdbItem? = null,                  // full-screen movie page
+    val movieDetail: TmdbItem? = null,                  // full-screen movie / series page
+    val seriesEpisode: SeriesEpisode? = null,           // episode whose streams are shown on a series page
     val movieDetails: TmdbDetails? = null,
     val browseSeasons: List<TmdbSeason> = emptyList(),
     val browseSelectedSeason: Int = 1,
@@ -102,6 +102,8 @@ enum class Tab { EPISODES, STVR, TYZDEN, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
 enum class PrehrajLoginStatus { LOGGED_OUT, LOGGING_IN, LOGGED_IN, FAILED }
 
 /** Scroll positions of the Prehraj browse screens, kept here so they survive leaving/re-entering the composition. */
+data class SeriesEpisode(val season: Int, val episode: Int, val name: String)
+
 class BrowseScroll {
     private val lists = mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>()
     private val grids = mutableMapOf<String, androidx.compose.foundation.lazy.grid.LazyGridState>()
@@ -364,7 +366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setBrowseType(type: String) {
         if (_state.value.browseType == type) return
-        _state.update { it.copy(browseType = type, browseGenre = null, browseGenreItems = emptyList(), browseDetail = null) }
+        _state.update { it.copy(browseType = type, browseGenre = null, browseGenreItems = emptyList(), movieDetail = null) }
         loadBrowse()
     }
 
@@ -430,24 +432,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Tap on a poster: movies go straight to a prehraj.to search, series open the episode picker. */
+    /**
+     * Tap on a poster: opens the full-screen detail page. Movies start the prehraj.to search straight away;
+     * series show seasons/episodes first and search once an episode is picked.
+     */
     fun openBrowseItem(item: TmdbItem) {
-        if (item.isTv) {
-            _state.update { it.copy(browseDetail = item, browseSeasons = emptyList(), browseEpisodes = emptyList(), browseSelectedSeason = 1) }
-            viewModelScope.launch {
+        _state.update {
+            it.copy(
+                movieDetail = item, movieDetails = null, prehrajSearchResults = emptyList(), prehrajSearchError = null,
+                prehrajSearching = !item.isTv, seriesEpisode = null,
+                browseSeasons = emptyList(), browseEpisodes = emptyList(), browseSelectedSeason = 1
+            )
+        }
+        val type = if (item.isTv) "tv" else "movie"
+        viewModelScope.launch {
+            val details = async { try { TmdbApi.details(type, item.id) } catch (e: Exception) { AppLogger.w("MainViewModel", "TMDB details failed: ${e.message}"); null } }
+            if (item.isTv) {
                 try {
                     val seasons = TmdbApi.seasons(item.id)
-                    _state.update { it.copy(browseSeasons = seasons) }
+                    _state.update { if (it.movieDetail?.id == item.id) it.copy(browseSeasons = seasons) else it }
                     seasons.firstOrNull()?.let { selectBrowseSeason(it.number) }
                 } catch (e: Exception) {
                     _state.update { it.copy(browseError = "Načítanie zlyhalo: ${e.message}") }
                 }
-            }
-        } else {
-            // Movies get a full-screen page; the prehraj.to results load into it instead of a separate screen
-            _state.update { it.copy(movieDetail = item, movieDetails = null, prehrajSearchResults = emptyList(), prehrajSearchError = null, prehrajSearching = true) }
-            viewModelScope.launch {
-                val details = async { try { TmdbApi.details("movie", item.id) } catch (e: Exception) { AppLogger.w("MainViewModel", "TMDB details failed: ${e.message}"); null } }
+            } else {
                 // The page is Slovak, but prehraj.to files are mostly named in Czech — search with all variants
                 val cs = try { TmdbApi.czechTitle("movie", item.id) } catch (e: Exception) { "" }
                 val queries = listOf(
@@ -455,19 +463,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     item.title, cs, item.originalTitle
                 ).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
                 runPrehrajSearch(queries, showResultsScreen = false)
-                details.await()?.let { d -> _state.update { if (it.movieDetail?.id == item.id) it.copy(movieDetails = d) else it } }
             }
+            details.await()?.let { d -> _state.update { if (it.movieDetail?.id == item.id) it.copy(movieDetails = d) else it } }
         }
     }
 
     fun closeMovieDetail() = _state.update {
-        it.copy(movieDetail = null, movieDetails = null, prehrajSearchResults = emptyList(), prehrajSearchError = null, prehrajSearching = false)
+        it.copy(
+            movieDetail = null, movieDetails = null, seriesEpisode = null, browseSeasons = emptyList(), browseEpisodes = emptyList(),
+            prehrajSearchResults = emptyList(), prehrajSearchError = null, prehrajSearching = false
+        )
     }
 
-    fun closeBrowseDetail() = _state.update { it.copy(browseDetail = null) }
+    /** From an episode's stream list back to the season/episode list. */
+    fun backToEpisodes() = _state.update {
+        it.copy(seriesEpisode = null, prehrajSearchResults = emptyList(), prehrajSearchError = null, prehrajSearching = false)
+    }
 
     fun selectBrowseSeason(season: Int) {
-        val item = _state.value.browseDetail ?: return
+        val item = _state.value.movieDetail ?: return
         _state.update { it.copy(browseSelectedSeason = season, browseEpisodes = emptyList()) }
         viewModelScope.launch {
             try {
@@ -480,11 +494,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun searchBrowseEpisode(season: Int, episode: Int) {
-        val item = _state.value.browseDetail ?: return
+        val item = _state.value.movieDetail ?: return
         val code = "S%02dE%02d".format(season, episode)
+        val name = _state.value.browseEpisodes.firstOrNull { it.number == episode }?.name.orEmpty()
+        _state.update {
+            it.copy(seriesEpisode = SeriesEpisode(season, episode, name), prehrajSearchResults = emptyList(),
+                prehrajSearchError = null, prehrajSearching = true)
+        }
         viewModelScope.launch {
             val cs = try { TmdbApi.czechTitle("tv", item.id) } catch (e: Exception) { "" }
-            runPrehrajSearch(listOf("${item.title} $code", "$cs $code", "${item.originalTitle} $code").map { it.trim() }.filter { it.isNotBlank() && !it.startsWith(code) }.distinct())
+            runPrehrajSearch(
+                listOf("${item.title} $code", "$cs $code", "${item.originalTitle} $code")
+                    .map { it.trim() }.filter { it.isNotBlank() && !it.startsWith(code) }.distinct(),
+                showResultsScreen = false
+            )
         }
     }
 
