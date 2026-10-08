@@ -23,7 +23,7 @@ class DownloadEpisodeWorker(
         val date = inputData.getString(KEY_DATE) ?: ""
         val showName = inputData.getString(KEY_SHOW_NAME) ?: ""
 
-        Log.d(TAG, "Starting UI download: $title")
+        AppLogger.i(TAG, "UI download START: $title (id=$id, attempt=$runAttemptCount, network=${NetworkLogger.describe(applicationContext)})")
         
         try {
             NotificationHelper.createChannel(applicationContext)
@@ -72,13 +72,24 @@ class DownloadEpisodeWorker(
             downloadManager.markComplete(episodeUrl)
             DownloadStateTracker.updateProgress(episodeUrl, 1f, DownloadStatus.DONE)
             setProgress(workDataOf(KEY_PROGRESS to 1f, KEY_STATUS to "done"))
-            Log.d(TAG, "Download complete: $title")
+            AppLogger.i(TAG, "UI download complete: $title")
             
             // Give UI a moment to show "Done" before removing
             kotlinx.coroutines.delay(1500)
             DownloadStateTracker.removeDownload(episodeUrl)
             
             Result.success(workDataOf(KEY_PROGRESS to 1f, KEY_STATUS to "done", KEY_TITLE to title))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            AppLogger.w(TAG, "UI download STOPPED/cancelled: $title (id=$id)")
+            throw e
+        } catch (e: NoVideoException) {
+            AppLogger.i(TAG, "No video on page yet: $title (${e.pageUrl})")
+            downloadManager.clearPending(episodeUrl)
+            DownloadStateTracker.updateError(episodeUrl, e.message)
+            setProgress(workDataOf(KEY_STATUS to "failed", KEY_ERROR to (e.message ?: "No video yet"), KEY_TITLE to title))
+            kotlinx.coroutines.delay(4000)
+            DownloadStateTracker.removeDownload(episodeUrl)
+            Result.failure(workDataOf(KEY_STATUS to "failed", KEY_ERROR to (e.message ?: "No video yet"), KEY_TITLE to title))
         } catch (e: Exception) {
             AppLogger.e(TAG, "Download failed: $title — ${e.message}")
             downloadManager.markFailed(episodeUrl)

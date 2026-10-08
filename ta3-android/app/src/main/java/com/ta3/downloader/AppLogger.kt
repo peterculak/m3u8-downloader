@@ -13,6 +13,8 @@ object AppLogger {
     private var logFile: File? = null
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     
+    private const val MAX_BYTES = 1_000_000
+
     var isEnabled: Boolean = false
 
     fun init(context: Context) {
@@ -39,10 +41,14 @@ object AppLogger {
         writeToFile("ERROR", tag, message, throwable)
     }
 
+    @Synchronized
     private fun writeToFile(level: String, tag: String, message: String, throwable: Throwable?) {
         if (!isEnabled) return
         val file = logFile ?: return
         try {
+            if (file.length() > MAX_BYTES) {
+                file.writeText(file.readText().takeLast(MAX_BYTES / 2).substringAfter("\n"))
+            }
             FileWriter(file, true).use { writer ->
                 val time = dateFormat.format(Date())
                 writer.append("[$time] $level/$tag: $message\n")

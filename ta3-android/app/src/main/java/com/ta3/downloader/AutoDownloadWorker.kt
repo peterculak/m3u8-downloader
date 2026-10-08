@@ -8,6 +8,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Deferred
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.ExistingWorkPolicy
 
@@ -26,9 +28,27 @@ class AutoDownloadWorker(
     private val downloadManager = DownloadManager(context)
 
     override suspend fun doWork(): Result {
+        val startMs = System.currentTimeMillis()
         AppLogger.init(applicationContext)
         AppLogger.isEnabled = settings.loggingEnabled
-        AppLogger.d(TAG, "AutoDownloadWorker started")
+        AppLogger.i(TAG, "Worker START id=$id tags=$tags attempt=$runAttemptCount retryOnly=${inputData.getBoolean("is_retry_only", false)} network=${NetworkLogger.describe(applicationContext)}")
+        try {
+            if (runLock.isLocked) AppLogger.i(TAG, "Worker id=$id waiting for another run to finish")
+            return runLock.withLock { doWorkInner() }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            val reason = if (android.os.Build.VERSION.SDK_INT >= 31) " reason=$stopReason" else ""
+            val inFlight = try { downloadManager.loadPendingDownloads().map { it.title } } catch (_: Exception) { emptyList() }
+            AppLogger.w(TAG, "Worker STOPPED/cancelled (id=$id)$reason, ${inFlight.size} pending: $inFlight")
+            // Killed mid-run: make sure the leftovers get retried without waiting for an app open.
+            val cancelledByApp = android.os.Build.VERSION.SDK_INT >= 31 && stopReason == 1 // STOP_REASON_CANCELLED_BY_APP
+            if (!cancelledByApp && inFlight.isNotEmpty()) scheduleWifiRetry(applicationContext)
+            throw e
+        } finally {
+            AppLogger.i(TAG, "Worker END id=$id after ${(System.currentTimeMillis() - startMs) / 1000}s")
+        }
+    }
+
+    private suspend fun doWorkInner(): Result {
         
         try {
             NotificationHelper.createChannel(applicationContext)
@@ -111,6 +131,10 @@ class AutoDownloadWorker(
                         
                         kotlinx.coroutines.delay(1500)
                         DownloadStateTracker.removeDownload(episode.url)
+                    } catch (e: NoVideoException) {
+                        AppLogger.i(TAG, "No video on page yet, dropping retry: ${episode.title} (${e.pageUrl})")
+                        downloadManager.clearPending(episode.url)
+                        DownloadStateTracker.removeDownload(episode.url)
                     } catch (e: Exception) {
                         AppLogger.e(TAG, "Failed to retry download ${episode.title}: ${e.message}")
                         downloadManager.markFailed(episode.url)
@@ -128,6 +152,7 @@ class AutoDownloadWorker(
                     try {
                         AppLogger.d(TAG, "Fetching episodes for ${show.displayName}")
                         val episodes = Scraper.fetchEpisodes(show)
+                        AppLogger.d(TAG, "${show.displayName}: ${episodes.size} episodes fetched, ${episodes.count { it.date == today }} from today")
 
                         // Only download today's episodes
                         val recent = episodes.filter { it.date == today }
@@ -163,6 +188,10 @@ class AutoDownloadWorker(
                                     AppLogger.d(TAG, "Done: ${episode.title}")
                                     
                                     kotlinx.coroutines.delay(1500)
+                                    DownloadStateTracker.removeDownload(episode.url)
+                                } catch (e: NoVideoException) {
+                                    AppLogger.i(TAG, "No video on page yet, skipping (will recheck next run): ${episode.title} (${e.pageUrl})")
+                                    downloadManager.clearPending(episode.url)
                                     DownloadStateTracker.removeDownload(episode.url)
                                 } catch (e: Exception) {
                                     AppLogger.e(TAG, "Failed to download ${episode.title}: ${e.message}")
@@ -383,12 +412,14 @@ class AutoDownloadWorker(
             NotificationHelper.notifyDownloadsComplete(applicationContext, downloaded.size, downloaded)
         }
 
-        AppLogger.d(TAG, "AutoDownloadWorker done — downloaded ${downloaded.size} episodes")
+        AppLogger.i(TAG, "AutoDownloadWorker done — downloaded ${downloaded.size} episodes")
         return Result.success()
     }
 
     companion object {
         private const val TAG = "AutoDownloadWorker"
+        /** Only one check/download run at a time, so concurrent workers never fetch the same episode twice. */
+        private val runLock = Mutex()
         const val WORK_NAME = "ta3_auto_download"
         const val WORK_NAME_IMMEDIATE = "ta3_auto_download_immediate"
         const val WORK_NAME_RETRY = "ta3_retry_pending"
@@ -435,12 +466,18 @@ class AutoDownloadWorker(
                 )
                 .build()
 
+            // Re-scheduling with UPDATE on every app open resets the period and can cancel a run
+            // in progress, so only update when interval / network constraint actually changed.
+            val prefs = context.getSharedPreferences("ta3_settings", Context.MODE_PRIVATE)
+            val config = "$intervalHours/$wifiOnly"
+            val changed = prefs.getString("periodic_config", null) != config
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
+                if (changed) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP,
                 request
             )
-            AppLogger.d(TAG, "Scheduled periodic work every $intervalHours hour(s), wifiOnly=$wifiOnly")
+            if (changed) prefs.edit().putString("periodic_config", config).apply()
+            AppLogger.d(TAG, "Periodic work every $intervalHours hour(s), wifiOnly=$wifiOnly (${if (changed) "updated" else "kept existing schedule"})")
         }
 
         /**
@@ -460,7 +497,7 @@ class AutoDownloadWorker(
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 WORK_NAME_IMMEDIATE,
-                ExistingWorkPolicy.REPLACE, // always re-run so new episodes are caught on every app open
+                ExistingWorkPolicy.KEEP, // don't cancel a check/download already in progress
                 request
             )
             AppLogger.d(TAG, "Enqueued immediate download check, wifiOnly=$wifiOnly")

@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
+        AppLogger.i("MainActivity", "App opened (coldStart=${savedInstanceState == null}, action=${intent?.action}, network=${NetworkLogger.describe(this)})")
+
         // Schedule periodic background worker
         val settings = AppSettings(this)
         if (settings.autoDownloadEnabled) {

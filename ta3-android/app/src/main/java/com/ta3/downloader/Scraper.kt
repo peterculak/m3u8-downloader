@@ -6,6 +6,10 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
+/** The page exists but has no video/podcast (e.g. an announcement article, or episode not yet published). */
+class NoVideoException(val pageUrl: String) :
+    Exception("No video published on this page yet (TA3 may not have uploaded it)")
+
 object Scraper {
 
     private val UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -116,7 +120,7 @@ object Scraper {
         // 2. Extract videoId
         val videoIdMatch = Regex(""""videoId"\s*:\s*"([^"]+)"""").find(detailHtml)
             ?: Regex("""videoId\s*:\s*'([^']+)'""").find(detailHtml)
-            ?: throw Exception("No videoId or podcast found on page: $episodeUrl")
+            ?: throw NoVideoException(episodeUrl)
         val videoId = videoIdMatch.groupValues[1]
 
         // 3. Fetch the livebox vod-source.js to get fresh auth token
