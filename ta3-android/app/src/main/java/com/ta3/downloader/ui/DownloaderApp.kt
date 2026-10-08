@@ -22,6 +22,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -177,7 +180,8 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     onOpenItem = { viewModel.openBrowseItem(it) },
                     onCloseDetail = { viewModel.closeBrowseDetail() },
                     onSeason = { viewModel.selectBrowseSeason(it) },
-                    onEpisode = { season, ep -> viewModel.searchBrowseEpisode(season, ep) }
+                    onEpisode = { season, ep -> viewModel.searchBrowseEpisode(season, ep) },
+                    scroll = viewModel.browseScroll
                 ),
                 onBackToBrowse = { viewModel.backToPrehrajBrowse() },
                 modifier = Modifier.padding(innerPadding)
@@ -1261,14 +1265,16 @@ fun PrehrajTab(
             }
         }
 
-        // Search bar
+        // Search bar — compact, single line, font scale capped so large system fonts don't wrap/grow it
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, 1.0f))) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 4.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surface)
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Search, null,
@@ -1289,8 +1295,9 @@ fun PrehrajTab(
                     }),
                     decorationBox = { inner ->
                         if (state.prehrajSearchQuery.isEmpty()) {
-                            Text("Hľadať filmy (napr. Spider Man)…",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                            Text("Hľadať filmy…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp,
+                                maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                         }
                         inner()
                     }
@@ -1308,9 +1315,11 @@ fun PrehrajTab(
                         .clickable { keyboard?.hide(); onSearch() }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text("Hľadať", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Hľadať", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        maxLines = 1, softWrap = false)
                 }
             }
+        }
         }
 
         if (state.prehrajSearchActive) {
@@ -1379,6 +1388,7 @@ fun PrehrajTab(
                             resolvedUrl = resolvedUrl,
                             onExtractUrl = { onExtractUrl(movie) },
                             onDownload = { url -> onDownload(movie, url) },
+                            onPlay = { url -> playUrlInExternalPlayer(context, url, movie.title) },
                             onShare = { url ->
                                 val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                     type = "text/plain"
@@ -1404,6 +1414,7 @@ fun PrehrajMovieCard(
     resolvedUrl: String?,
     onExtractUrl: () -> Unit,
     onDownload: (String) -> Unit,
+    onPlay: (String) -> Unit,
     onShare: (String) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -1492,20 +1503,20 @@ fun PrehrajMovieCard(
                     }
                 }
                 resolvedUrl != null -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { onShare(resolvedUrl) }, contentPadding = PaddingValues(0.dp)) {
-                            Icon(Icons.Outlined.Share, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Zdieľať", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                        Spacer(Modifier.width(16.dp))
-                        TextButton(onClick = { onDownload(resolvedUrl) }, contentPadding = PaddingValues(0.dp)) {
-                            Icon(Icons.Outlined.Download, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Stiahnuť", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    // Three equal-width, single-line actions (respects the user's font size)
+                    run {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            @Composable
+                            fun Action(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+                                TextButton(onClick = onClick, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                    Icon(icon, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(label, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                                }
+                            }
+                            Action(Icons.Outlined.PlayArrow, "Prehrať") { onPlay(resolvedUrl) }
+                            Action(Icons.Outlined.Share, "Zdieľať") { onShare(resolvedUrl) }
+                            Action(Icons.Outlined.Download, "Stiahnuť") { onDownload(resolvedUrl) }
                         }
                     }
                 }

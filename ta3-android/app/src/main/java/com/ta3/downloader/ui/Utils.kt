@@ -30,6 +30,22 @@ fun openFileWithPlayer(context: Context, file: DownloadedFile) {
     context.startActivity(Intent.createChooser(intent, "Open with..."))
 }
 
+/** Stream a direct video URL in the phone's default video player (chooser if several). */
+fun playUrlInExternalPlayer(context: Context, url: String, title: String) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(android.net.Uri.parse(url), "video/*")
+        putExtra("title", title)
+        // MX Player-style request headers; prehraj.to's CDN is fetched with this Referer by the downloader too
+        putExtra("headers", arrayOf("Referer", "https://prehraj.to/", "User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"))
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(Intent.createChooser(intent, "Prehrať vo videoprehrávači").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Nenašiel sa žiadny prehrávač", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
 fun formatFileSize(bytes: Long): String = when {
     bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
     bytes >= 1_048_576     -> "%.1f MB".format(bytes / 1_048_576.0)

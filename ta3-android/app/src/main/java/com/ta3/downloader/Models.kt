@@ -261,6 +261,21 @@ data class TmdbItem(
     val isTv: Boolean get() = mediaType == "tv"
 }
 
-data class TmdbGenre(val id: Int, val name: String)
+data class TmdbGenre(val id: Int, val name: String) {
+    companion object {
+        /** Pseudo-genres shown as chips; each is backed by a TMDB list endpoint rather than a genre filter. */
+        val TRENDING = TmdbGenre(-1, "Trendy")
+        val POPULAR = TmdbGenre(-2, "Populárne")
+        val TOP_RATED = TmdbGenre(-3, "Najlepšie hodnotené")
+        val LISTS = listOf(TRENDING, POPULAR, TOP_RATED)
+
+        fun category(g: TmdbGenre): TmdbApi.Category? = when (g) {
+            TRENDING -> TmdbApi.Category.TRENDING
+            POPULAR -> TmdbApi.Category.POPULAR
+            TOP_RATED -> TmdbApi.Category.TOP_RATED
+            else -> null
+        }
+    }
+}
 data class TmdbSeason(val number: Int, val episodeCount: Int)
 data class TmdbEpisode(val number: Int, val name: String)

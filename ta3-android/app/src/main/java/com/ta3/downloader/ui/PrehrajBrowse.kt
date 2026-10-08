@@ -24,6 +24,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -37,7 +39,8 @@ class BrowseActions(
     val onOpenItem: (TmdbItem) -> Unit,
     val onCloseDetail: () -> Unit,
     val onSeason: (Int) -> Unit,
-    val onEpisode: (Int, Int) -> Unit
+    val onEpisode: (Int, Int) -> Unit,
+    val scroll: BrowseScroll
 )
 
 private val rowTitles = listOf(
@@ -58,30 +61,32 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
 
     val type = state.browseType
     Column(modifier = modifier.fillMaxSize()) {
-        // Movies / Series switch
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FilterChip(selected = type == "movie", onClick = { actions.onType("movie") }, label = { Text("Filmy") })
-            FilterChip(selected = type == "tv", onClick = { actions.onType("tv") }, label = { Text("Seriály") })
-        }
-        // Genres
-        val genres = state.browseGenres[type].orEmpty()
-        if (genres.isNotEmpty()) {
+        // Movies / Series switch + genres on ONE row (saves vertical space); font scale capped
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = minOf(density.fontScale, 1.0f))) {
+            val genres = state.browseGenres[type].orEmpty()
             LazyRow(
+                state = actions.scroll.list("chips"),
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
-                    FilterChip(selected = state.browseGenre == null, onClick = { actions.onGenre(null) }, label = { Text("Všetko") })
-                }
-                items(genres, key = { it.id }) { g ->
-                    FilterChip(selected = state.browseGenre?.id == g.id, onClick = { actions.onGenre(g) }, label = { Text(g.name) })
+                item { FilterChip(selected = type == "movie", onClick = { actions.onType("movie") }, label = { Text("Filmy", maxLines = 1) }) }
+                item { FilterChip(selected = type == "tv", onClick = { actions.onType("tv") }, label = { Text("Seriály", maxLines = 1) }) }
+                if (genres.isNotEmpty()) {
+                    item { Spacer(Modifier.width(8.dp)) }
+                    item {
+                        FilterChip(selected = state.browseGenre == null, onClick = { actions.onGenre(null) }, label = { Text("Všetko", maxLines = 1) })
+                    }
+                    items(TmdbGenre.LISTS, key = { it.id }) { l ->
+                        FilterChip(selected = state.browseGenre == l, onClick = { actions.onGenre(l) }, label = { Text(l.name, maxLines = 1) })
+                    }
+                    items(genres, key = { it.id }) { g ->
+                        FilterChip(selected = state.browseGenre?.id == g.id, onClick = { actions.onGenre(g) }, label = { Text(g.name, maxLines = 1) })
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(2.dp))
 
         state.browseError?.let {
             Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
@@ -89,7 +94,7 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
 
         if (state.browseGenre != null) {
             // Genre grid with infinite scroll
-            val gridState = rememberLazyGridState()
+            val gridState = actions.scroll.grid("grid:$type:${state.browseGenre.id}")
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(110.dp),
@@ -111,6 +116,7 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
             }
         } else {
             LazyColumn(
+                state = actions.scroll.list("rows:$type"),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -123,6 +129,7 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
                                 color = MaterialTheme.colorScheme.onBackground,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                             LazyRow(
+                                state = actions.scroll.list("row:$type:${cat.path}"),
                                 contentPadding = PaddingValues(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
@@ -183,6 +190,7 @@ private val Color_scrim = androidx.compose.ui.graphics.Color(0xAA000000)
 private fun SeriesDetail(state: UiState, actions: BrowseActions, modifier: Modifier = Modifier) {
     val item = state.browseDetail ?: return
     LazyColumn(
+        state = actions.scroll.list("series:${item.id}:${state.browseSelectedSeason}"),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)

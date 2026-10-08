@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 /** Thin TMDB v3 client used to browse movies/series in the Prehraj tab. */
 object TmdbApi {
     private const val BASE = "https://api.themoviedb.org/3"
-    // Czech titles match prehraj.to uploads far better than English ones.
+    // Czech titles match prehraj.to uploads far better than English ones. (UI labels like genres use sk-SK.)
     private const val LANG = "cs-CZ"
 
     enum class Category(val path: String) { TRENDING("trending"), POPULAR("popular"), TOP_RATED("top_rated") }
@@ -25,8 +25,8 @@ object TmdbApi {
 
     private fun get(path: String, params: Map<String, String> = emptyMap()): JsonObject {
         if (!isConfigured) throw Exception("TMDB API key missing (add tmdb.api.key to local.properties)")
-        val url = StringBuilder("$BASE$path?api_key=${BuildConfig.TMDB_API_KEY}&language=$LANG")
-        params.forEach { (k, v) -> url.append('&').append(k).append('=').append(java.net.URLEncoder.encode(v, "UTF-8")) }
+        val url = StringBuilder("$BASE$path?api_key=${BuildConfig.TMDB_API_KEY}&language=${params["language"] ?: LANG}")
+        params.filterKeys { it != "language" }.forEach { (k, v) -> url.append('&').append(k).append('=').append(java.net.URLEncoder.encode(v, "UTF-8")) }
         val req = Request.Builder().url(url.toString()).build()
         return client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("TMDB HTTP ${resp.code}")
@@ -72,7 +72,7 @@ object TmdbApi {
         }
 
     suspend fun genres(type: String): List<TmdbGenre> = withContext(Dispatchers.IO) {
-        get("/genre/$type/list").getAsJsonArray("genres")?.map {
+        get("/genre/$type/list", mapOf("language" to "sk-SK")).getAsJsonArray("genres")?.map {
             val o = it.asJsonObject
             TmdbGenre(o.get("id").asInt, o.str("name"))
         } ?: emptyList()

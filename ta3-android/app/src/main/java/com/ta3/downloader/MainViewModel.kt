@@ -97,7 +97,18 @@ enum class Tab { EPISODES, STVR, TYZDEN, YOUTUBE, DOWNLOADS, SETTINGS, PREHRAJ }
 
 enum class PrehrajLoginStatus { LOGGED_OUT, LOGGING_IN, LOGGED_IN, FAILED }
 
+/** Scroll positions of the Prehraj browse screens, kept here so they survive leaving/re-entering the composition. */
+class BrowseScroll {
+    private val lists = mutableMapOf<String, androidx.compose.foundation.lazy.LazyListState>()
+    private val grids = mutableMapOf<String, androidx.compose.foundation.lazy.grid.LazyGridState>()
+    fun list(key: String) = lists.getOrPut(key) { androidx.compose.foundation.lazy.LazyListState() }
+    fun grid(key: String) = grids.getOrPut(key) { androidx.compose.foundation.lazy.grid.LazyGridState() }
+    fun resetGrids() = grids.clear()
+}
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+
+    val browseScroll = BrowseScroll()
 
     private val downloadManager = DownloadManager(application)
     private val settings = AppSettings(application)
@@ -368,6 +379,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectBrowseGenre(genre: TmdbGenre?) {
+        browseScroll.resetGrids()
         if (genre == null) {
             _state.update { it.copy(browseGenre = null, browseGenreItems = emptyList(), browseGenrePage = 1) }
             return
@@ -384,7 +396,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.update { it.copy(browseLoading = true, browseError = null) }
             try {
-                val items = TmdbApi.byGenre(st.browseType, genre.id, page)
+                val category = TmdbGenre.category(genre)
+                val items = if (category != null) TmdbApi.list(st.browseType, category, page)
+                else TmdbApi.byGenre(st.browseType, genre.id, page)
                 _state.update {
                     // ignore if user switched genre/type meanwhile
                     if (it.browseGenre != genre || it.browseType != st.browseType) it.copy(browseLoading = false)
