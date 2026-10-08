@@ -115,7 +115,7 @@ fun SettingsTab(
         items
     }
 
-    val lazyListState = rememberLazyListState()
+    val lazyListState = LocalScroll.current.list("settings")
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val fromItem = list.getOrNull(from.index)
         val toItem = list.getOrNull(to.index)

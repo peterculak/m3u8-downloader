@@ -67,6 +67,7 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
             val genres = state.browseGenres[type].orEmpty()
             LazyRow(
                 state = actions.scroll.list("chips"),
+                modifier = Modifier.revealHeaderOnDrag(),
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -95,6 +96,8 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
         if (state.browseGenre != null) {
             // Genre grid with infinite scroll
             val gridState = actions.scroll.grid("grid:$type:${state.browseGenre.id}")
+            val gridFar by remember(gridState) { derivedStateOf { gridState.firstVisibleItemIndex > 4 } }
+            ScrollToTopHost(showButton = gridFar, onTop = { gridState.animateScrollToItem(0) }) {
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(110.dp),
@@ -110,13 +113,17 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
                     PosterCard(item, Modifier.fillMaxWidth()) { actions.onOpenItem(item) }
                 }
             }
+            }
         } else if (state.browseLoading && state.browseRows.keys.none { it.startsWith("$type:") }) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else {
+            val rowsState = actions.scroll.list("rows:$type")
+            val rowsFar by remember(rowsState) { derivedStateOf { rowsState.firstVisibleItemIndex > 0 } }
+            ScrollToTopHost(showButton = rowsFar, onTop = { rowsState.animateScrollToItem(0) }) {
             LazyColumn(
-                state = actions.scroll.list("rows:$type"),
+                state = rowsState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -140,6 +147,7 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -189,9 +197,12 @@ private val Color_scrim = androidx.compose.ui.graphics.Color(0xAA000000)
 @Composable
 private fun SeriesDetail(state: UiState, actions: BrowseActions, modifier: Modifier = Modifier) {
     val item = state.browseDetail ?: return
+    val seriesState = actions.scroll.list("series:${item.id}:${state.browseSelectedSeason}")
+    val seriesFar by remember(seriesState) { derivedStateOf { seriesState.firstVisibleItemIndex > 6 } }
+    ScrollToTopHost(showButton = seriesFar, onTop = { seriesState.animateScrollToItem(0) }, modifier = modifier) {
     LazyColumn(
-        state = actions.scroll.list("series:${item.id}:${state.browseSelectedSeason}"),
-        modifier = modifier.fillMaxSize(),
+        state = seriesState,
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -239,5 +250,6 @@ private fun SeriesDetail(state: UiState, actions: BrowseActions, modifier: Modif
                     overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onBackground)
             }
         }
+    }
     }
 }

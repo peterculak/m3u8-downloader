@@ -64,6 +64,8 @@ data class UiState(
     val browseGenre: TmdbGenre? = null,
     val browseGenreItems: List<TmdbItem> = emptyList(),
     val browseGenrePage: Int = 1,
+    /** Loaded items + last page per "<type>:<chipId>", so switching chips back restores the list and its scroll. */
+    val browseListCache: Map<String, Pair<List<TmdbItem>, Int>> = emptyMap(),
     val browseLoading: Boolean = false,
     val browseError: String? = null,
     val browseDetail: TmdbItem? = null,                 // series detail screen
@@ -103,7 +105,11 @@ class BrowseScroll {
     private val grids = mutableMapOf<String, androidx.compose.foundation.lazy.grid.LazyGridState>()
     fun list(key: String) = lists.getOrPut(key) { androidx.compose.foundation.lazy.LazyListState() }
     fun grid(key: String) = grids.getOrPut(key) { androidx.compose.foundation.lazy.grid.LazyGridState() }
+    private val scrolls = mutableMapOf<String, androidx.compose.foundation.ScrollState>()
+    fun scrollState(key: String) = scrolls.getOrPut(key) { androidx.compose.foundation.ScrollState(0) }
     fun resetGrids() = grids.clear()
+    /** Forget a saved position so the next visit starts at the top. */
+    fun drop(key: String) { lists.remove(key) }
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -326,6 +332,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Try each query in turn and show the first one that returns results. */
     private fun runPrehrajSearch(queries: List<String>) {
+        browseScroll.drop("prehraj:results")
         viewModelScope.launch {
             _state.update { it.copy(prehrajSearchActive = true, prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
             try {
@@ -379,9 +386,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectBrowseGenre(genre: TmdbGenre?) {
-        browseScroll.resetGrids()
         if (genre == null) {
             _state.update { it.copy(browseGenre = null, browseGenreItems = emptyList(), browseGenrePage = 1) }
+            return
+        }
+        val cached = _state.value.browseListCache["${_state.value.browseType}:${genre.id}"]
+        if (cached != null) {
+            // Already loaded before: restore items (and, via BrowseScroll, the scroll position) without reloading
+            _state.update { it.copy(browseGenre = genre, browseGenreItems = cached.first, browseGenrePage = cached.second) }
             return
         }
         _state.update { it.copy(browseGenre = genre, browseGenreItems = emptyList(), browseGenrePage = 0) }
@@ -402,7 +414,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _state.update {
                     // ignore if user switched genre/type meanwhile
                     if (it.browseGenre != genre || it.browseType != st.browseType) it.copy(browseLoading = false)
-                    else it.copy(browseGenreItems = (it.browseGenreItems + items).distinctBy { i -> i.id }, browseGenrePage = page, browseLoading = false)
+                    else {
+                        val merged = (it.browseGenreItems + items).distinctBy { i -> i.id }
+                        it.copy(
+                            browseGenreItems = merged, browseGenrePage = page, browseLoading = false,
+                            browseListCache = it.browseListCache + ("${st.browseType}:${genre.id}" to (merged to page))
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(browseLoading = false, browseError = "Načítanie zlyhalo: ${e.message}") }

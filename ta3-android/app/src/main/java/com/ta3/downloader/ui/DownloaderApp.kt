@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -50,14 +51,26 @@ fun DownloaderApp(viewModel: MainViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // The Prehraj tab collapses the title + main tab bar when its content scrolls up
+    val headerCollapse = remember { HeaderCollapse() }
+    headerCollapse.enabled = state.selectedTab == Tab.PREHRAJ
+    LaunchedEffect(state.selectedTab) { if (state.selectedTab != Tab.PREHRAJ) headerCollapse.reset() }
+
+    CompositionLocalProvider(LocalScroll provides viewModel.browseScroll, LocalHeaderCollapse provides headerCollapse) {
     Scaffold(
+        modifier = Modifier.nestedScroll(headerCollapse),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+          Column(
+              modifier = Modifier
+                  .fillMaxWidth()
+                  .background(MaterialTheme.colorScheme.background)
+                  .statusBarsPadding()
+          ) {
+           Box(Modifier.collapsibleHeader(headerCollapse)) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.background)
-                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 Text(
@@ -135,6 +148,8 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     }
                 }
             }
+           }
+          }
         }
     ) { innerPadding ->
         when (state.selectedTab) {
@@ -345,6 +360,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
             }
         }
     }
+    }
 }
 
 @Composable
@@ -394,7 +410,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(LocalScroll.current.scrollState("ta3:chips"))
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -472,6 +488,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
             else -> {
                 val episodes = viewModel.filteredEpisodes
                 LazyColumn(
+                    state = LocalScroll.current.list("ta3:${state.selectedShow.name}"),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -506,7 +523,7 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(LocalScroll.current.scrollState("stvr:chips"))
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -584,6 +601,7 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
             else -> {
                 val episodes = viewModel.filteredStvrEpisodes
                 LazyColumn(
+                    state = LocalScroll.current.list("stvr:${state.selectedStvrShow.name}"),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -618,7 +636,7 @@ fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mod
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
+                .horizontalScroll(LocalScroll.current.scrollState("tyzden:chips"))
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -696,6 +714,7 @@ fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mod
             else -> {
                 val episodes = viewModel.filteredTyzdenEpisodes
                 LazyColumn(
+                    state = LocalScroll.current.list("tyzden:${state.selectedTyzdenShow.name}"),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -727,7 +746,7 @@ fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mod
 fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize()) {
 
-        val lazyListState = rememberLazyListState()
+        val lazyListState = LocalScroll.current.list("yt:channels")
         val selectedChannelName = state.selectedYtChannel?.name
 
         LaunchedEffect(selectedChannelName) {
@@ -824,6 +843,7 @@ fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mo
             else -> {
                 val episodes = viewModel.filteredYtEpisodes
                 LazyColumn(
+                    state = LocalScroll.current.list("yt:${state.selectedYtChannel?.name}"),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -999,6 +1019,7 @@ fun DownloadsTab(
     }
 
     LazyColumn(
+        state = LocalScroll.current.list("downloads"),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1271,6 +1292,7 @@ fun PrehrajTab(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .revealHeaderOnDrag()
                 .padding(horizontal = 16.dp, vertical = 4.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surface)
@@ -1374,7 +1396,11 @@ fun PrehrajTab(
                 }
             }
             else -> {
+                val resultsState = LocalScroll.current.list("prehraj:results")
+                val resultsFar by remember(resultsState) { derivedStateOf { resultsState.firstVisibleItemIndex > 3 } }
+                ScrollToTopHost(showButton = resultsFar, onTop = { resultsState.animateScrollToItem(0) }) {
                 LazyColumn(
+                    state = resultsState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1400,6 +1426,7 @@ fun PrehrajTab(
                             onCancel = { onCancelDownload(movie.pageUrl) }
                         )
                     }
+                }
                 }
             }
         }
