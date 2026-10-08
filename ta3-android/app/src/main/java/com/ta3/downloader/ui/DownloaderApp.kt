@@ -169,6 +169,17 @@ fun DownloaderApp(viewModel: MainViewModel) {
                 onExtractUrl = { viewModel.extractPrehrajUrl(it) },
                 onDownload = { movie, url -> viewModel.downloadPrehrajMovie(movie, url) },
                 onCancelDownload = { viewModel.cancelDownload(it) },
+                browse = BrowseActions(
+                    onLoad = { viewModel.loadBrowse() },
+                    onType = { viewModel.setBrowseType(it) },
+                    onGenre = { viewModel.selectBrowseGenre(it) },
+                    onLoadMoreGenre = { viewModel.loadMoreGenre() },
+                    onOpenItem = { viewModel.openBrowseItem(it) },
+                    onCloseDetail = { viewModel.closeBrowseDetail() },
+                    onSeason = { viewModel.selectBrowseSeason(it) },
+                    onEpisode = { season, ep -> viewModel.searchBrowseEpisode(season, ep) }
+                ),
+                onBackToBrowse = { viewModel.backToPrehrajBrowse() },
                 modifier = Modifier.padding(innerPadding)
             )
             Tab.SETTINGS -> SettingsTab(
@@ -1202,6 +1213,8 @@ fun PrehrajTab(
     onExtractUrl: (PrehrajMovie) -> Unit,
     onDownload: (PrehrajMovie, String) -> Unit,
     onCancelDownload: (String) -> Unit,
+    browse: BrowseActions,
+    onBackToBrowse: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -1300,8 +1313,17 @@ fun PrehrajTab(
             }
         }
 
+        if (state.prehrajSearchActive) {
+            TextButton(onClick = onBackToBrowse, modifier = Modifier.padding(horizontal = 8.dp)) {
+                Icon(Icons.Default.ArrowBack, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Späť na prehliadanie", fontSize = 13.sp)
+            }
+        }
+
         // Content
         when {
+            !state.prehrajSearchActive -> PrehrajBrowse(state, browse, Modifier.weight(1f))
             state.prehrajSearching -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {

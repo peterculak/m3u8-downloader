@@ -244,3 +244,23 @@ object CustomChannelManager {
         return YOUTUBE_CHANNELS + getCustomChannels()
     }
 }
+
+// ─── TMDB (browse catalog for the Prehraj tab) ────────────────────────────────
+
+data class TmdbItem(
+    val id: Int,
+    val mediaType: String,          // "movie" | "tv"
+    val title: String,              // localized (cs-CZ) title
+    val originalTitle: String,
+    val year: String = "",
+    val posterPath: String? = null,
+    val overview: String = "",
+    val rating: Double = 0.0
+) {
+    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" }
+    val isTv: Boolean get() = mediaType == "tv"
+}
+
+data class TmdbGenre(val id: Int, val name: String)
+data class TmdbSeason(val number: Int, val episodeCount: Int)
+data class TmdbEpisode(val number: Int, val name: String)

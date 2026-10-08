@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -16,6 +18,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // TMDB key lives in (gitignored) local.properties as tmdb.api.key=...
+        val localProps = Properties().apply {
+            rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        }
+        buildConfigField("String", "TMDB_API_KEY", "\"${localProps.getProperty("tmdb.api.key", "")}\"")
     }
 
     buildTypes {
@@ -41,6 +49,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     splits {
@@ -64,6 +73,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.icons.extended)
     implementation(libs.okhttp)
+    implementation(libs.coil.compose)
     implementation(libs.jsoup)
     implementation(libs.workmanager.ktx)
     implementation(libs.gson)

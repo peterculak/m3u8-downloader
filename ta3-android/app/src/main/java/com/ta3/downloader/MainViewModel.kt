@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 data class UiState(
@@ -55,6 +56,20 @@ data class UiState(
     val prehrajLoginStatus: PrehrajLoginStatus = PrehrajLoginStatus.LOGGED_OUT,
     val prehrajLoginError: String? = null,
     val prehrajResolvedUrls: Map<String, String> = emptyMap(),
+    // Prehraj browse (TMDB)
+    val prehrajSearchActive: Boolean = false,           // true = showing prehraj.to results, false = browse
+    val browseType: String = "movie",                   // "movie" | "tv"
+    val browseRows: Map<String, List<TmdbItem>> = emptyMap(),   // key "<type>:<category>"
+    val browseGenres: Map<String, List<TmdbGenre>> = emptyMap(),
+    val browseGenre: TmdbGenre? = null,
+    val browseGenreItems: List<TmdbItem> = emptyList(),
+    val browseGenrePage: Int = 1,
+    val browseLoading: Boolean = false,
+    val browseError: String? = null,
+    val browseDetail: TmdbItem? = null,                 // series detail screen
+    val browseSeasons: List<TmdbSeason> = emptyList(),
+    val browseSelectedSeason: Int = 1,
+    val browseEpisodes: List<TmdbEpisode> = emptyList(),
     // YouTube
     val allYtChannels: List<YouTubeChannel> = emptyList(),
     val selectedYtChannel: YouTubeChannel? = null,
@@ -288,20 +303,139 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setPrehrajSearchQuery(q: String) = _state.update { it.copy(prehrajSearchQuery = q) }
+    fun setPrehrajSearchQuery(q: String) = _state.update {
+        it.copy(prehrajSearchQuery = q, prehrajSearchActive = it.prehrajSearchActive && q.isNotEmpty())
+    }
 
     fun searchPrehraj() {
         val query = _state.value.prehrajSearchQuery.trim()
         if (query.isEmpty()) return
+        runPrehrajSearch(listOf(query))
+    }
+
+    /** Try each query in turn and show the first one that returns results. */
+    private fun runPrehrajSearch(queries: List<String>) {
         viewModelScope.launch {
-            _state.update { it.copy(prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
+            _state.update { it.copy(prehrajSearchActive = true, prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
             try {
-                val results = PrehrajScraper.search(query)
-                _state.update { it.copy(prehrajSearchResults = results, prehrajSearching = false) }
+                var shownQuery = queries.first()
+                var results = emptyList<PrehrajMovie>()
+                for (q in queries) {
+                    results = PrehrajScraper.search(q)
+                    shownQuery = q
+                    if (results.isNotEmpty()) break
+                }
+                _state.update { it.copy(prehrajSearchQuery = shownQuery, prehrajSearchResults = results, prehrajSearching = false) }
             } catch (e: Exception) {
-                _state.update { it.copy(prehrajSearching = false, prehrajSearchError = "Search failed: ${e.message}") }
+                AppLogger.e("MainViewModel", "prehraj search failed: ${e.message}")
+                val msg = if (e.message?.contains("HTTP 429") == true)
+                    "prehraj.to odmietol požiadavku (HTTP 429). Je zapnutá VPN? Inak skúste o chvíľu."
+                else "Search failed: ${e.message}"
+                _state.update { it.copy(prehrajSearching = false, prehrajSearchError = msg) }
             }
         }
+    }
+
+    // ─── Prehraj browse (TMDB) ─────────────────────────────────────────────────
+
+    fun backToPrehrajBrowse() = _state.update {
+        it.copy(prehrajSearchActive = false, prehrajSearchQuery = "", prehrajSearchResults = emptyList(), prehrajSearchError = null)
+    }
+
+    fun setBrowseType(type: String) {
+        if (_state.value.browseType == type) return
+        _state.update { it.copy(browseType = type, browseGenre = null, browseGenreItems = emptyList(), browseDetail = null) }
+        loadBrowse()
+    }
+
+    /** Load the trending / popular / top-rated rows and genre list for the current type (cached per type). */
+    fun loadBrowse() {
+        val type = _state.value.browseType
+        if (_state.value.browseRows.containsKey("$type:${TmdbApi.Category.TRENDING.path}")) return
+        viewModelScope.launch {
+            _state.update { it.copy(browseLoading = true, browseError = null) }
+            try {
+                val rows = TmdbApi.Category.entries.map { cat -> cat to async { TmdbApi.list(type, cat) } }
+                val genres = async { TmdbApi.genres(type) }
+                val loaded = rows.associate { (cat, d) -> "$type:${cat.path}" to d.await() }
+                val g = genres.await()
+                _state.update { it.copy(browseRows = it.browseRows + loaded, browseGenres = it.browseGenres + (type to g), browseLoading = false) }
+            } catch (e: Exception) {
+                AppLogger.e("MainViewModel", "TMDB browse load failed: ${e.message}")
+                _state.update { it.copy(browseLoading = false, browseError = "Načítanie zlyhalo: ${e.message}") }
+            }
+        }
+    }
+
+    fun selectBrowseGenre(genre: TmdbGenre?) {
+        if (genre == null) {
+            _state.update { it.copy(browseGenre = null, browseGenreItems = emptyList(), browseGenrePage = 1) }
+            return
+        }
+        _state.update { it.copy(browseGenre = genre, browseGenreItems = emptyList(), browseGenrePage = 0) }
+        loadMoreGenre()
+    }
+
+    fun loadMoreGenre() {
+        val st = _state.value
+        val genre = st.browseGenre ?: return
+        if (st.browseLoading) return
+        val page = st.browseGenrePage + 1
+        viewModelScope.launch {
+            _state.update { it.copy(browseLoading = true, browseError = null) }
+            try {
+                val items = TmdbApi.byGenre(st.browseType, genre.id, page)
+                _state.update {
+                    // ignore if user switched genre/type meanwhile
+                    if (it.browseGenre != genre || it.browseType != st.browseType) it.copy(browseLoading = false)
+                    else it.copy(browseGenreItems = (it.browseGenreItems + items).distinctBy { i -> i.id }, browseGenrePage = page, browseLoading = false)
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(browseLoading = false, browseError = "Načítanie zlyhalo: ${e.message}") }
+            }
+        }
+    }
+
+    /** Tap on a poster: movies go straight to a prehraj.to search, series open the episode picker. */
+    fun openBrowseItem(item: TmdbItem) {
+        if (item.isTv) {
+            _state.update { it.copy(browseDetail = item, browseSeasons = emptyList(), browseEpisodes = emptyList(), browseSelectedSeason = 1) }
+            viewModelScope.launch {
+                try {
+                    val seasons = TmdbApi.seasons(item.id)
+                    _state.update { it.copy(browseSeasons = seasons) }
+                    seasons.firstOrNull()?.let { selectBrowseSeason(it.number) }
+                } catch (e: Exception) {
+                    _state.update { it.copy(browseError = "Načítanie zlyhalo: ${e.message}") }
+                }
+            }
+        } else {
+            val queries = listOf(
+                "${item.title} ${item.year}", "${item.originalTitle} ${item.year}", item.title, item.originalTitle
+            ).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            runPrehrajSearch(queries)
+        }
+    }
+
+    fun closeBrowseDetail() = _state.update { it.copy(browseDetail = null) }
+
+    fun selectBrowseSeason(season: Int) {
+        val item = _state.value.browseDetail ?: return
+        _state.update { it.copy(browseSelectedSeason = season, browseEpisodes = emptyList()) }
+        viewModelScope.launch {
+            try {
+                val eps = TmdbApi.episodes(item.id, season)
+                _state.update { if (it.browseSelectedSeason == season) it.copy(browseEpisodes = eps) else it }
+            } catch (e: Exception) {
+                _state.update { it.copy(browseError = "Načítanie zlyhalo: ${e.message}") }
+            }
+        }
+    }
+
+    fun searchBrowseEpisode(season: Int, episode: Int) {
+        val item = _state.value.browseDetail ?: return
+        val code = "S%02dE%02d".format(season, episode)
+        runPrehrajSearch(listOf("${item.title} $code", "${item.originalTitle} $code").distinct())
     }
 
     /**

@@ -84,60 +84,75 @@ object PrehrajScraper {
         Log.d(TAG, "Logging in as $email")
         sessionCookie = ""
 
-        // Step 1: POST login form to the Nette framework endpoint
-        val formBuilder = FormBody.Builder()
-            .add("email", email)
-            .add("password", password)
-            .add("_do", "loginDialog-login-loginForm-submit")
-            .add("login", "Přihlásit se")
+        val noRedirectClient = client.newBuilder().followRedirects(false).build()
+        val jar = linkedMapOf<String, String>()   // cookie name -> value (later Set-Cookie wins)
+        fun absorb(resp: Response) = resp.headers.values("Set-Cookie").forEach {
+            val nv = it.substringBefore(";")
+            jar[nv.substringBefore("=")] = nv.substringAfter("=", "")
+        }
+        fun cookieHeader() = jar.entries.filter { it.value.isNotEmpty() }.joinToString("; ") { "${it.key}=${it.value}" }
 
+        // Step 1: load the page like a browser — gets the session cookies and the form's hidden fields
+        val homeHtml = noRedirectClient.newCall(
+            Request.Builder().url("$BASE/").header("User-Agent", UA)
+                .header("Accept-Language", "sk,cs;q=0.9,en;q=0.8").build()
+        ).execute().use { absorb(it); it.body?.string().orEmpty() }
+
+        val form = Jsoup.parse(homeHtml).selectFirst("form[id=frm-loginDialog-login-loginForm]")
+        val action = form?.attr("action")?.takeIf { it.isNotEmpty() } ?: "/?frm=loginDialog-login-loginForm"
+        val formBuilder = FormBody.Builder()
+        // Hidden inputs (_do, any CSRF/_token_ fields)
+        form?.select("input[type=hidden]")?.forEach { formBuilder.add(it.attr("name"), it.attr("value")) }
+        if (form == null || form.select("input[name=_do]").isEmpty()) {
+            formBuilder.add("_do", "loginDialog-login-loginForm-submit")
+        }
+        formBuilder.add("email", email).add("password", password)
+            .add("remember_login", "on").add("login", "Přihlásit se")
+        AppLogger.i(TAG, "Login form: action=$action formFound=${form != null} hidden=${form?.select("input[type=hidden]")?.map { it.attr("name") }} cookies=${jar.keys}")
+
+        // Step 2: POST
         val loginReq = Request.Builder()
-            .url("$BASE/?frm=loginDialog-login-loginForm")
+            .url(if (action.startsWith("http")) action else "$BASE$action")
             .header("User-Agent", UA)
             .header("Referer", "$BASE/")
+            .header("Origin", BASE)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .header("Accept-Language", "sk,cs;q=0.9,en;q=0.8")
+            .header("Cookie", cookieHeader())
             .post(formBuilder.build())
             .build()
 
-        // Use a client that does NOT follow redirects so we can read Set-Cookie
-        val noRedirectClient = client.newBuilder().followRedirects(false).build()
-        val cookies = mutableListOf<String>()
-
+        var location: String?
         noRedirectClient.newCall(loginReq).execute().use { resp ->
-            Log.d(TAG, "Login response: ${resp.code}")
-            // Collect all Set-Cookie values
-            resp.headers.values("Set-Cookie").forEach { cookies.add(it) }
+            absorb(resp)
+            location = resp.header("Location")
+            AppLogger.i(TAG, "Login POST ${resp.code} Location=$location")
+        }
 
-            // If there was a redirect, follow it manually to collect further cookies
-            var location = resp.header("Location")
-            var prevCookies = cookies.joinToString("; ") { it.substringBefore(";") }
-            var hops = 0
-            while (location != null && hops < 5) {
-                hops++
-                val redirectUrl = if (location.startsWith("http")) location else "$BASE$location"
-                val redirectReq = Request.Builder()
-                    .url(redirectUrl)
-                    .header("User-Agent", UA)
-                    .header("Cookie", prevCookies)
-                    .get()
-                    .build()
-                noRedirectClient.newCall(redirectReq).execute().use { r ->
-                    r.headers.values("Set-Cookie").forEach { cookies.add(it) }
-                    location = r.header("Location")
-                    prevCookies = cookies.joinToString("; ") { it.substringBefore(";") }
-                }
+        // Step 3: follow redirects, carrying cookies
+        var hops = 0
+        while (location != null && hops < 5) {
+            hops++
+            val url = if (location!!.startsWith("http")) location!! else "$BASE$location"
+            noRedirectClient.newCall(
+                Request.Builder().url(url).header("User-Agent", UA).header("Cookie", cookieHeader()).get().build()
+            ).execute().use { r ->
+                absorb(r)
+                location = r.header("Location")
+                val page = try { r.body?.string().orEmpty() } catch (_: Exception) { "" }
+                val msg = Jsoup.parse(page).select("[class*=flash], [class*=error], [class*=alert]")
+                    .map { it.text().trim() }.filter { it.isNotEmpty() }.distinct().take(3).joinToString(" | ")
+                AppLogger.i(TAG, "Login hop ${r.code} -> ${location ?: "(end)"} from $url msg='${msg.take(200)}'")
             }
         }
 
-        if (cookies.isEmpty()) {
-            throw Exception("Login failed: no cookies returned. Check credentials.")
+        // Names + whether non-empty only (never the values)
+        AppLogger.i(TAG, "Login cookies: " + jar.entries.joinToString(", ") { "${it.key}=${if (it.value.isEmpty()) "<empty>" else "set"}" })
+        if (jar["access_token"].isNullOrEmpty()) {
+            throw Exception("Login rejected by prehraj.to (no access token) — is the VPN connected? Otherwise check email/password in Settings")
         }
-
-        // Build a cookie string from all Set-Cookie values (name=value pairs only)
-        val cookieString = cookies.joinToString("; ") { it.substringBefore(";") }
-        sessionCookie = cookieString
-        Log.d(TAG, "Session cookie stored (${cookieString.length} chars)")
+        sessionCookie = cookieHeader()
+        Log.d(TAG, "Session cookie stored (${sessionCookie.length} chars)")
     }
 
     // ─── Search ───────────────────────────────────────────────────────────────
@@ -152,6 +167,7 @@ object PrehrajScraper {
         Log.d(TAG, "Searching: $url")
 
         val html = get(url, withSession = isLoggedIn)
+        AppLogger.i(TAG, "Search '$query' loggedIn=$isLoggedIn htmlLen=${html.length} listings=${html.split("video-wrapper").size - 1}")
         val doc = Jsoup.parse(html)
         val results = mutableListOf<PrehrajMovie>()
 
