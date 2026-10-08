@@ -69,6 +69,8 @@ data class UiState(
     val browseLoading: Boolean = false,
     val browseError: String? = null,
     val browseDetail: TmdbItem? = null,                 // series detail screen
+    val movieDetail: TmdbItem? = null,                  // full-screen movie page
+    val movieDetails: TmdbDetails? = null,
     val browseSeasons: List<TmdbSeason> = emptyList(),
     val browseSelectedSeason: Int = 1,
     val browseEpisodes: List<TmdbEpisode> = emptyList(),
@@ -331,10 +333,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Try each query in turn and show the first one that returns results. */
-    private fun runPrehrajSearch(queries: List<String>) {
+    private fun runPrehrajSearch(queries: List<String>, showResultsScreen: Boolean = true) {
         browseScroll.drop("prehraj:results")
         viewModelScope.launch {
-            _state.update { it.copy(prehrajSearchActive = true, prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
+            _state.update { it.copy(prehrajSearchActive = showResultsScreen, prehrajSearching = true, prehrajSearchError = null, prehrajSearchResults = emptyList()) }
             try {
                 var shownQuery = queries.first()
                 var results = emptyList<PrehrajMovie>()
@@ -343,7 +345,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     shownQuery = q
                     if (results.isNotEmpty()) break
                 }
-                _state.update { it.copy(prehrajSearchQuery = shownQuery, prehrajSearchResults = results, prehrajSearching = false) }
+                _state.update { it.copy(prehrajSearchQuery = if (showResultsScreen) shownQuery else it.prehrajSearchQuery, prehrajSearchResults = results, prehrajSearching = false) }
             } catch (e: Exception) {
                 AppLogger.e("MainViewModel", "prehraj search failed: ${e.message}")
                 val msg = if (e.message?.contains("HTTP 429") == true)
@@ -442,11 +444,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         } else {
-            val queries = listOf(
-                "${item.title} ${item.year}", "${item.originalTitle} ${item.year}", item.title, item.originalTitle
-            ).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-            runPrehrajSearch(queries)
+            // Movies get a full-screen page; the prehraj.to results load into it instead of a separate screen
+            _state.update { it.copy(movieDetail = item, movieDetails = null, prehrajSearchResults = emptyList(), prehrajSearchError = null, prehrajSearching = true) }
+            viewModelScope.launch {
+                val details = async { try { TmdbApi.details("movie", item.id) } catch (e: Exception) { AppLogger.w("MainViewModel", "TMDB details failed: ${e.message}"); null } }
+                // The page is Slovak, but prehraj.to files are mostly named in Czech — search with all variants
+                val cs = try { TmdbApi.czechTitle("movie", item.id) } catch (e: Exception) { "" }
+                val queries = listOf(
+                    "${item.title} ${item.year}", "$cs ${item.year}", "${item.originalTitle} ${item.year}",
+                    item.title, cs, item.originalTitle
+                ).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                runPrehrajSearch(queries, showResultsScreen = false)
+                details.await()?.let { d -> _state.update { if (it.movieDetail?.id == item.id) it.copy(movieDetails = d) else it } }
+            }
         }
+    }
+
+    fun closeMovieDetail() = _state.update {
+        it.copy(movieDetail = null, movieDetails = null, prehrajSearchResults = emptyList(), prehrajSearchError = null, prehrajSearching = false)
     }
 
     fun closeBrowseDetail() = _state.update { it.copy(browseDetail = null) }
@@ -467,7 +482,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun searchBrowseEpisode(season: Int, episode: Int) {
         val item = _state.value.browseDetail ?: return
         val code = "S%02dE%02d".format(season, episode)
-        runPrehrajSearch(listOf("${item.title} $code", "${item.originalTitle} $code").distinct())
+        viewModelScope.launch {
+            val cs = try { TmdbApi.czechTitle("tv", item.id) } catch (e: Exception) { "" }
+            runPrehrajSearch(listOf("${item.title} $code", "$cs $code", "${item.originalTitle} $code").map { it.trim() }.filter { it.isNotBlank() && !it.startsWith(code) }.distinct())
+        }
     }
 
     /**

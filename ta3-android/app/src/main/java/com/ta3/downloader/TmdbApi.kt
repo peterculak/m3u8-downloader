@@ -11,8 +11,9 @@ import java.util.concurrent.TimeUnit
 /** Thin TMDB v3 client used to browse movies/series in the Prehraj tab. */
 object TmdbApi {
     private const val BASE = "https://api.themoviedb.org/3"
-    // Czech titles match prehraj.to uploads far better than English ones. (UI labels like genres use sk-SK.)
-    private const val LANG = "cs-CZ"
+    // Everything shown in the UI is Slovak. (Czech titles are looked up separately — see czechTitle — because
+    // prehraj.to uploads are usually named in Czech.)
+    private const val LANG = "sk-SK"
 
     enum class Category(val path: String) { TRENDING("trending"), POPULAR("popular"), TOP_RATED("top_rated") }
 
@@ -50,6 +51,7 @@ object TmdbApi {
                 originalTitle = o.str(if (isTv) "original_name" else "original_title").ifEmpty { title },
                 year = o.str(if (isTv) "first_air_date" else "release_date").take(4),
                 posterPath = o.str("poster_path").ifEmpty { null },
+                backdropPath = o.str("backdrop_path").ifEmpty { null },
                 overview = o.str("overview"),
                 rating = o.get("vote_average")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
             )
@@ -76,6 +78,24 @@ object TmdbApi {
             val o = it.asJsonObject
             TmdbGenre(o.get("id").asInt, o.str("name"))
         } ?: emptyList()
+    }
+
+    /** Runtime, genres and a Slovak description for the detail page. */
+    suspend fun details(type: String, id: Int): TmdbDetails = withContext(Dispatchers.IO) {
+        val o = get("/$type/$id", mapOf("language" to "sk-SK"))
+        TmdbDetails(
+            genres = o.getAsJsonArray("genres")?.map { it.asJsonObject.str("name") } ?: emptyList(),
+            runtimeMinutes = o.get("runtime")?.takeIf { !it.isJsonNull }?.asInt
+                ?: o.getAsJsonArray("episode_run_time")?.firstOrNull()?.asInt ?: 0,
+            tagline = o.str("tagline"),
+            overview = o.str("overview")
+        )
+    }
+
+    /** Czech title, used only to widen the prehraj.to search. */
+    suspend fun czechTitle(type: String, id: Int): String = withContext(Dispatchers.IO) {
+        val o = get("/$type/$id", mapOf("language" to "cs-CZ"))
+        o.str(if (type == "tv") "name" else "title")
     }
 
     suspend fun seasons(tvId: Int): List<TmdbSeason> = withContext(Dispatchers.IO) {

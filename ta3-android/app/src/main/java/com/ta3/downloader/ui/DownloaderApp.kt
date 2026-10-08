@@ -360,6 +360,14 @@ fun DownloaderApp(viewModel: MainViewModel) {
             }
         }
     }
+    // Full-screen movie page covers everything (header included) while open
+    MovieDetailScreen(
+        state = state,
+        onClose = { viewModel.closeMovieDetail() },
+        onExtractUrl = { viewModel.extractPrehrajUrl(it) },
+        onDownload = { movie, url -> viewModel.downloadPrehrajMovie(movie, url) },
+        onCancelDownload = { viewModel.cancelDownload(it) }
+    )
     }
 }
 

@@ -254,12 +254,23 @@ data class TmdbItem(
     val originalTitle: String,
     val year: String = "",
     val posterPath: String? = null,
+    val backdropPath: String? = null,
     val overview: String = "",
     val rating: Double = 0.0
 ) {
     val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" }
+    /** Large image for the detail page: backdrop if there is one, else the poster at high resolution. */
+    val heroUrl: String? get() = backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" }
+        ?: posterPath?.let { "https://image.tmdb.org/t/p/w780$it" }
     val isTv: Boolean get() = mediaType == "tv"
 }
+
+data class TmdbDetails(
+    val genres: List<String> = emptyList(),
+    val runtimeMinutes: Int = 0,
+    val tagline: String = "",
+    val overview: String = ""
+)
 
 data class TmdbGenre(val id: Int, val name: String) {
     companion object {
