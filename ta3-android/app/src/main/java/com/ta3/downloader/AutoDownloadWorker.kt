@@ -137,7 +137,9 @@ class AutoDownloadWorker(
                         DownloadStateTracker.removeDownload(episode.url)
                     } catch (e: Exception) {
                         AppLogger.e(TAG, "Failed to retry download ${episode.title}: ${e.message}")
-                        downloadManager.markFailed(episode.url)
+                        // Members-only videos can never succeed; stop the 5-minute retry loop.
+                        if (e.message?.contains("only available for members") == true) downloadManager.clearPending(episode.url)
+                        else downloadManager.markFailed(episode.url)
                         DownloadStateTracker.updateError(episode.url, e.message)
                         kotlinx.coroutines.delay(4000)
                         DownloadStateTracker.removeDownload(episode.url)

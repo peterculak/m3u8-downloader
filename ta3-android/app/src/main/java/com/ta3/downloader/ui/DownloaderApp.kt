@@ -1212,8 +1212,14 @@ fun DownloadedFileCard(
 
 @Composable
 fun ActiveDownloadsBanner(downloads: List<ActiveDownload>, modifier: Modifier = Modifier) {
-    val inProgress = downloads.filter { it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.RESOLVING }
-    if (inProgress.isEmpty()) return
+    // Only real transfers count; "resolving" is just the page check and usually ends in a skip.
+    val inProgress = downloads.filter { it.status == DownloadStatus.DOWNLOADING }
+    // Debounce so a transfer that ends within a moment doesn't flash the banner.
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(inProgress.isNotEmpty()) {
+        if (inProgress.isNotEmpty()) { kotlinx.coroutines.delay(800); visible = true } else visible = false
+    }
+    if (inProgress.isEmpty() || !visible) return
 
     Card(
         modifier = modifier.fillMaxWidth(),
