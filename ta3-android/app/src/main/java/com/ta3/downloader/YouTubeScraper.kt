@@ -399,6 +399,21 @@ object YouTubeScraper {
     }
 
     /**
+     * A single URL a video player can stream directly: the best stream that already contains audio and video, else HLS (live streams,
+     * which some players such as VLC handle badly).
+     */
+    suspend fun resolvePlayableUrl(videoUrl: String): String = withContext(Dispatchers.IO) {
+        ensureInitialized()
+        val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+        // A plain progressive file plays everywhere; VLC crashes on YouTube's HLS playlists, so HLS is the last resort.
+        val muxed = info.videoStreams?.maxByOrNull { it.resolution?.replace(Regex("[^0-9]"), "")?.toIntOrNull() ?: 0 }
+        AppLogger.d(TAG, "Play URL: muxed=${muxed?.resolution} hls=${!info.hlsUrl.isNullOrEmpty()}")
+        muxed?.content?.let { return@withContext it }
+        info.hlsUrl?.takeIf { it.isNotEmpty() }
+            ?: throw Exception("YouTube nedáva prehrateľný stream pre toto video")
+    }
+
+    /**
      * Resolve the highest quality video-only stream and audio stream for a YouTube video.
      */
     suspend fun resolveHighestQualityVideoAndAudio(videoUrl: String): Triple<String, String, Long> = withContext(Dispatchers.IO) {

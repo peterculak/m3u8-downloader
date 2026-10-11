@@ -31,12 +31,12 @@ fun openFileWithPlayer(context: Context, file: DownloadedFile) {
 }
 
 /** Stream a direct video URL in the phone's default video player (chooser if several). */
-fun playUrlInExternalPlayer(context: Context, url: String, title: String) {
+fun playUrlInExternalPlayer(context: Context, url: String, title: String, referer: String? = "https://prehraj.to/") {
     val intent = Intent(Intent.ACTION_VIEW).apply {
         setDataAndType(android.net.Uri.parse(url), "video/*")
         putExtra("title", title)
         // MX Player-style request headers; prehraj.to's CDN is fetched with this Referer by the downloader too
-        putExtra("headers", arrayOf("Referer", "https://prehraj.to/", "User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"))
+        if (referer != null) putExtra("headers", arrayOf("Referer", referer, "User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"))
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     try {

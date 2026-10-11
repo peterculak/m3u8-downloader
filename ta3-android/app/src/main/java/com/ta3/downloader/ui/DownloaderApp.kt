@@ -416,6 +416,7 @@ private fun TabItem(
 
 @Composable
 fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     Column(modifier = modifier.fillMaxSize()) {
 
         Row(
@@ -517,6 +518,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startDownload(episode) },
+                                onPlay = { viewModel.playEpisode(context, episode) },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -529,6 +531,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
 
 @Composable
 fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     Column(modifier = modifier.fillMaxSize()) {
 
         Row(
@@ -630,6 +633,7 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startStvrDownload(episode) },
+                                onPlay = { viewModel.playEpisode(context, episode) },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -642,6 +646,7 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
 
 @Composable
 fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     Column(modifier = modifier.fillMaxSize()) {
 
         Row(
@@ -743,6 +748,7 @@ fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mod
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startTyzdenDownload(episode) },
+                                onPlay = { viewModel.playEpisode(context, episode) },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -755,6 +761,7 @@ fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mod
 
 @Composable
 fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     Column(modifier = modifier.fillMaxSize()) {
 
         val lazyListState = LocalScroll.current.list("yt:channels")
@@ -872,6 +879,7 @@ fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mo
                                 isDownloaded = state.downloadedFiles.any { it.episodeUrl == episode.url },
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startYtDownload(episode) },
+                                onPlay = { viewModel.playEpisode(context, episode) },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -888,7 +896,8 @@ fun EpisodeCard(
     isDownloaded: Boolean,
     activeDownload: ActiveDownload?,
     onDownload: () -> Unit,
-    onCancelDownload: () -> Unit = {}
+    onCancelDownload: () -> Unit = {},
+    onPlay: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -973,14 +982,29 @@ fun EpisodeCard(
                             Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
                             Text("Stiahnuté", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                        Text("Pozrieť stiahnuté →", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        if (onPlay != null) {
+                            TextButton(onClick = onPlay, contentPadding = PaddingValues(0.dp)) {
+                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Prehrať", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
                     }
                 }
                 else -> {
-                    TextButton(onClick = onDownload, contentPadding = PaddingValues(0.dp)) {
-                        Icon(Icons.Outlined.Download, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Stiahnuť", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onDownload, contentPadding = PaddingValues(0.dp)) {
+                            Icon(Icons.Outlined.Download, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Stiahnuť", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                        }
+                        if (onPlay != null) {
+                            TextButton(onClick = onPlay, contentPadding = PaddingValues(0.dp)) {
+                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Prehrať", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                            }
+                        }
                     }
                 }
             }

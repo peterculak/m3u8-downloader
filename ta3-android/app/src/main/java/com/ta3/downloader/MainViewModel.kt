@@ -442,6 +442,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Resolve [episode]'s stream and open it in the phone's default player (nothing is downloaded). */
+    fun playEpisode(context: android.content.Context, episode: Episode) {
+        viewModelScope.launch {
+            android.widget.Toast.makeText(context, "Pripravujem prehrávanie…", android.widget.Toast.LENGTH_SHORT).show()
+            try {
+                val url = PlayResolver.resolve(episode)
+                AppLogger.i("Play", "Play ${episode.title}: ${url.take(80)}")
+                com.ta3.downloader.ui.playUrlInExternalPlayer(context, url, episode.title, referer = null)
+            } catch (e: Exception) {
+                AppLogger.e("Play", "Play failed for ${episode.title}: ${e.message}")
+                android.widget.Toast.makeText(context, "Nepodarilo sa prehrať: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun setBrowseSort(sort: TmdbSort) {
         val genre = _state.value.browseGenre ?: return
         if (_state.value.browseSort == sort) return
