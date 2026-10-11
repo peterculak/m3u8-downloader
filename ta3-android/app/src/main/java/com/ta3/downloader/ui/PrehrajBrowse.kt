@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Movie
@@ -36,6 +37,7 @@ class BrowseActions(
     val onLoad: () -> Unit,
     val onType: (String) -> Unit,
     val onGenre: (TmdbGenre?) -> Unit,
+    val onSort: (TmdbSort) -> Unit,
     val onLoadMoreGenre: () -> Unit,
     val onOpenItem: (TmdbItem) -> Unit,
     val onSearchDirect: () -> Unit,
@@ -90,9 +92,14 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
 
         if (state.browseGenre != null) {
             // Genre grid with infinite scroll
-            val gridState = actions.scroll.grid("grid:$type:${state.browseGenre.id}")
+            val gridState = actions.scroll.grid("grid:$type:${state.browseGenre.id}:${state.browseSort}")
             val gridFar by remember(gridState) { derivedStateOf { gridState.firstVisibleItemIndex > 4 } }
             ScrollToTopHost(showButton = gridFar, onTop = { gridState.animateScrollToItem(0) }) {
+            Box(Modifier.fillMaxSize()) {
+            // Lists (Trendy/Populárne/...) come from fixed-order endpoints, so they are ordered on the device
+            val shown = remember(state.browseGenreItems, state.browseSort, state.browseGenre) {
+                if (state.browseGenre?.let { TmdbGenre.category(it) } != null) state.browseGenreItems.sortedFor(state.browseSort) else state.browseGenreItems
+            }
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(110.dp),
@@ -101,12 +108,14 @@ fun PrehrajBrowse(state: UiState, actions: BrowseActions, modifier: Modifier = M
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                itemsIndexed(state.browseGenreItems, key = { _, i -> i.id }) { index, item ->
-                    if (index >= state.browseGenreItems.size - 6) {
+                itemsIndexed(shown, key = { _, i -> i.id }) { index, item ->
+                    if (index >= shown.size - 6) {
                         LaunchedEffect(state.browseGenreItems.size) { actions.onLoadMoreGenre() }
                     }
                     PosterCard(item, Modifier.fillMaxWidth()) { actions.onOpenItem(item) }
                 }
+            }
+            SortFab(state.browseSort, actions.onSort, Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 24.dp))
             }
             }
         } else if (state.browseLoading && state.browseRows.keys.none { it.startsWith("$type:") }) {
@@ -234,6 +243,33 @@ fun TmdbSearchResults(state: UiState, actions: BrowseActions, modifier: Modifier
                     }
                     PosterCard(item, Modifier.fillMaxWidth()) { actions.onOpenItem(item) }
                 }
+            }
+        }
+    }
+}
+
+private fun List<TmdbItem>.sortedFor(sort: TmdbSort): List<TmdbItem> = when (sort) {
+    TmdbSort.RECOMMENDED -> this
+    TmdbSort.NAME -> sortedWith(compareBy(java.text.Collator.getInstance(java.util.Locale("sk"))) { it.title })
+    TmdbSort.YEAR -> sortedByDescending { it.year }
+    TmdbSort.RATING -> sortedByDescending { it.rating }
+}
+
+@Composable
+private fun SortFab(sort: TmdbSort, onSort: (TmdbSort) -> Unit, modifier: Modifier = Modifier) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        SmallFloatingActionButton(
+            onClick = { open = true },
+            containerColor = if (sort == TmdbSort.RECOMMENDED) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primary,
+            contentColor = if (sort == TmdbSort.RECOMMENDED) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimary
+        ) { Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Zoradiť") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            TmdbSort.entries.forEach { s ->
+                DropdownMenuItem(
+                    text = { Text(s.label, fontWeight = if (s == sort) FontWeight.Bold else FontWeight.Normal) },
+                    onClick = { open = false; onSort(s) }
+                )
             }
         }
     }

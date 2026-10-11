@@ -191,6 +191,7 @@ fun DownloaderApp(viewModel: MainViewModel) {
                     onLoad = { viewModel.loadBrowse() },
                     onType = { viewModel.setBrowseType(it) },
                     onGenre = { viewModel.selectBrowseGenre(it) },
+                    onSort = { viewModel.setBrowseSort(it) },
                     onLoadMoreGenre = { viewModel.loadMoreGenre() },
                     onOpenItem = { viewModel.openBrowseItem(it) },
                     onSearchDirect = { viewModel.searchPrehrajDirect() },

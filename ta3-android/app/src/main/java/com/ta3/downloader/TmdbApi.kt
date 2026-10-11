@@ -75,23 +75,23 @@ object TmdbApi {
             parseItems(get(path, mapOf("page" to "$page")), type)
         }
 
-    suspend fun byGenre(type: String, genreId: Int, page: Int): List<TmdbItem> =
+    suspend fun byGenre(type: String, genreId: Int, page: Int, sort: TmdbSort = TmdbSort.RECOMMENDED): List<TmdbItem> =
         withContext(Dispatchers.IO) {
             parseItems(
                 get("/discover/$type", mapOf(
-                    "with_genres" to "$genreId", "sort_by" to "popularity.desc", "page" to "$page",
-                    "vote_count.gte" to "20"
+                    "with_genres" to "$genreId", "sort_by" to sort.param(type), "page" to "$page",
+                    "vote_count.gte" to maxOf(20, sort.minVotes).toString()
                 )), type
             )
         }
 
     /** Productions from one country (ISO code), most popular first. */
-    suspend fun byCountry(type: String, country: String, page: Int): List<TmdbItem> =
+    suspend fun byCountry(type: String, country: String, page: Int, sort: TmdbSort = TmdbSort.RECOMMENDED): List<TmdbItem> =
         withContext(Dispatchers.IO) {
             parseItems(
                 get("/discover/$type", mapOf(
-                    "with_origin_country" to country, "sort_by" to "popularity.desc", "page" to "$page",
-                    "vote_count.gte" to "3"
+                    "with_origin_country" to country, "sort_by" to sort.param(type), "page" to "$page",
+                    "vote_count.gte" to maxOf(3, sort.minVotes / 10).toString()
                 )), type
             )
         }

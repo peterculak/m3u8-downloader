@@ -295,5 +295,18 @@ data class TmdbGenre(val id: Int, val name: String) {
         }
     }
 }
+/** Ordering for genre / country grids (backed by TMDB discover's sort_by). */
+enum class TmdbSort(val label: String) {
+    RECOMMENDED("Odporúčané"), NAME("Názov"), YEAR("Rok"), RATING("Hodnotenie");
+
+    fun param(type: String): String = when (this) {
+        RECOMMENDED -> "popularity.desc"
+        NAME -> if (type == "tv") "name.asc" else "title.asc"
+        YEAR -> if (type == "tv") "first_air_date.desc" else "primary_release_date.desc"
+        RATING -> "vote_average.desc"
+    }
+    /** Minimum votes so "best rated" isn't dominated by titles with a single 10/10 vote. */
+    val minVotes: Int get() = if (this == RATING) 100 else 0
+}
 data class TmdbSeason(val number: Int, val episodeCount: Int)
 data class TmdbEpisode(val number: Int, val name: String)

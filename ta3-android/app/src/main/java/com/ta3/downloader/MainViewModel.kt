@@ -64,6 +64,7 @@ data class UiState(
     val browseGenre: TmdbGenre? = null,
     val browseGenreItems: List<TmdbItem> = emptyList(),
     val browseGenrePage: Int = 1,
+    val browseSort: TmdbSort = TmdbSort.RECOMMENDED,
     /** Loaded items + last page per "<type>:<chipId>", so switching chips back restores the list and its scroll. */
     val browseListCache: Map<String, Pair<List<TmdbItem>, Int>> = emptyMap(),
     val browseLoading: Boolean = false,
@@ -441,12 +442,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setBrowseSort(sort: TmdbSort) {
+        val genre = _state.value.browseGenre ?: return
+        if (_state.value.browseSort == sort) return
+        _state.update { it.copy(browseSort = sort) }
+        // Fixed-order lists are re-ordered on the device; only discover-backed grids need a different fetch
+        if (TmdbGenre.category(genre) == null) selectBrowseGenre(genre)
+    }
+
     fun selectBrowseGenre(genre: TmdbGenre?) {
         if (genre == null) {
             _state.update { it.copy(browseGenre = null, browseGenreItems = emptyList(), browseGenrePage = 1) }
             return
         }
-        val cached = _state.value.browseListCache["${_state.value.browseType}:${genre.id}"]
+        val cached = _state.value.browseListCache["${_state.value.browseType}:${genre.id}:${_state.value.browseSort}"]
         if (cached != null) {
             // Already loaded before: restore items (and, via BrowseScroll, the scroll position) without reloading
             _state.update { it.copy(browseGenre = genre, browseGenreItems = cached.first, browseGenrePage = cached.second) }
@@ -466,16 +475,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val category = TmdbGenre.category(genre)
                 val items = if (category != null) TmdbApi.list(st.browseType, category, page)
-                else TmdbGenre.country(genre)?.let { TmdbApi.byCountry(st.browseType, it, page) }
-                    ?: TmdbApi.byGenre(st.browseType, genre.id, page)
+                else TmdbGenre.country(genre)?.let { TmdbApi.byCountry(st.browseType, it, page, st.browseSort) }
+                    ?: TmdbApi.byGenre(st.browseType, genre.id, page, st.browseSort)
                 _state.update {
                     // ignore if user switched genre/type meanwhile
-                    if (it.browseGenre != genre || it.browseType != st.browseType) it.copy(browseLoading = false)
+                    if (it.browseGenre != genre || it.browseType != st.browseType || it.browseSort != st.browseSort) it.copy(browseLoading = false)
                     else {
                         val merged = (it.browseGenreItems + items).distinctBy { i -> i.id }
                         it.copy(
                             browseGenreItems = merged, browseGenrePage = page, browseLoading = false,
-                            browseListCache = it.browseListCache + ("${st.browseType}:${genre.id}" to (merged to page))
+                            browseListCache = it.browseListCache + ("${st.browseType}:${genre.id}:${st.browseSort}" to (merged to page))
                         )
                     }
                 }
