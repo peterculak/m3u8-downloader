@@ -169,6 +169,11 @@ class DownloadManager(private val context: Context) {
         registryMutex.withLock { loadDeletedUrlsInternal() }
     }
 
+    /** Never auto-download this URL again (e.g. members-only videos that can't succeed). */
+    suspend fun tombstone(url: String) = withContext(Dispatchers.IO) {
+        registryMutex.withLock { saveDeletedUrlsInternal(loadDeletedUrlsInternal() + url) }
+    }
+
     private fun loadDeletedUrlsInternal(): Set<String> {
         return try {
             if (!deletedUrlsFile.exists()) return emptySet()
