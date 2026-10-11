@@ -519,6 +519,7 @@ fun EpisodesTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = M
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startDownload(episode) },
                                 onPlay = { viewModel.playEpisode(context, episode) },
+                                onPlayLocal = { state.downloadedFiles.firstOrNull { it.episodeUrl == episode.url }?.let { openFileWithPlayer(context, it) } },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -634,6 +635,7 @@ fun StvrTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Modif
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startStvrDownload(episode) },
                                 onPlay = { viewModel.playEpisode(context, episode) },
+                                onPlayLocal = { state.downloadedFiles.firstOrNull { it.episodeUrl == episode.url }?.let { openFileWithPlayer(context, it) } },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -749,6 +751,7 @@ fun TyzdenTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mod
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startTyzdenDownload(episode) },
                                 onPlay = { viewModel.playEpisode(context, episode) },
+                                onPlayLocal = { state.downloadedFiles.firstOrNull { it.episodeUrl == episode.url }?.let { openFileWithPlayer(context, it) } },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -880,6 +883,7 @@ fun YouTubeTab(state: UiState, viewModel: MainViewModel, modifier: Modifier = Mo
                                 activeDownload = state.activeDownloads[episode.url],
                                 onDownload = { viewModel.startYtDownload(episode) },
                                 onPlay = { viewModel.playEpisode(context, episode) },
+                                onPlayLocal = { state.downloadedFiles.firstOrNull { it.episodeUrl == episode.url }?.let { openFileWithPlayer(context, it) } },
                                 onCancelDownload = { viewModel.cancelDownload(episode.url) }
                             )
                         }
@@ -897,7 +901,8 @@ fun EpisodeCard(
     activeDownload: ActiveDownload?,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit = {},
-    onPlay: (() -> Unit)? = null
+    onPlay: (() -> Unit)? = null,
+    onPlayLocal: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -982,13 +987,7 @@ fun EpisodeCard(
                             Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(14.dp))
                             Text("Stiahnuté", color = MaterialTheme.colorScheme.secondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
-                        if (onPlay != null) {
-                            TextButton(onClick = onPlay, contentPadding = PaddingValues(0.dp)) {
-                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Prehrať", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        }
+                        PlayButtons(onPlay, onPlayLocal, downloaded = true)
                     }
                 }
                 else -> {
@@ -998,16 +997,26 @@ fun EpisodeCard(
                             Spacer(Modifier.width(6.dp))
                             Text("Stiahnuť", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                         }
-                        if (onPlay != null) {
-                            TextButton(onClick = onPlay, contentPadding = PaddingValues(0.dp)) {
-                                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Prehrať", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
-                            }
-                        }
+                        PlayButtons(onPlay, onPlayLocal, downloaded = false)
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayButtons(onPlay: (() -> Unit)?, onPlayLocal: (() -> Unit)?, downloaded: Boolean) {
+    if (onPlay == null) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        // 1: stream the video online
+        IconButton(onClick = onPlay, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.Videocam, contentDescription = "Prehrať video online", tint = MaterialTheme.colorScheme.primary)
+        }
+        // 2: the downloaded local file (only once it exists)
+        IconButton(onClick = { onPlayLocal?.invoke() }, enabled = downloaded && onPlayLocal != null, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.PlayCircle, contentDescription = "Prehrať stiahnutý súbor",
+                tint = if (downloaded) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
         }
     }
 }

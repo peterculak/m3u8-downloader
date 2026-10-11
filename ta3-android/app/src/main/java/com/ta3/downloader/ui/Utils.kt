@@ -14,11 +14,12 @@ fun openFileWithPlayer(context: Context, file: DownloadedFile) {
     val f = File(file.localPath)
     if (!f.exists()) return
 
-    val uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        f
-    )
+    val uri = try {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Súbor sa nepodarilo otvoriť: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+        return
+    }
 
     val intent = Intent(Intent.ACTION_VIEW).apply {
         // audio/mp4 is the correct MIME type for .m4a files
@@ -27,7 +28,11 @@ fun openFileWithPlayer(context: Context, file: DownloadedFile) {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
-    context.startActivity(Intent.createChooser(intent, "Open with..."))
+    try {
+        context.startActivity(Intent.createChooser(intent, "Otvoriť v prehrávači").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Nenašiel sa žiadny prehrávač", android.widget.Toast.LENGTH_SHORT).show()
+    }
 }
 
 /** Stream a direct video URL in the phone's default video player (chooser if several). */
