@@ -85,6 +85,17 @@ object TmdbApi {
             )
         }
 
+    /** Productions from one country (ISO code), most popular first. */
+    suspend fun byCountry(type: String, country: String, page: Int): List<TmdbItem> =
+        withContext(Dispatchers.IO) {
+            parseItems(
+                get("/discover/$type", mapOf(
+                    "with_origin_country" to country, "sort_by" to "popularity.desc", "page" to "$page",
+                    "vote_count.gte" to "3"
+                )), type
+            )
+        }
+
     suspend fun genres(type: String): List<TmdbGenre> = withContext(Dispatchers.IO) {
         get("/genre/$type/list", mapOf("language" to "sk-SK")).getAsJsonArray("genres")?.map {
             val o = it.asJsonObject

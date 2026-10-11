@@ -466,7 +466,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val category = TmdbGenre.category(genre)
                 val items = if (category != null) TmdbApi.list(st.browseType, category, page)
-                else TmdbApi.byGenre(st.browseType, genre.id, page)
+                else TmdbGenre.country(genre)?.let { TmdbApi.byCountry(st.browseType, it, page) }
+                    ?: TmdbApi.byGenre(st.browseType, genre.id, page)
                 _state.update {
                     // ignore if user switched genre/type meanwhile
                     if (it.browseGenre != genre || it.browseType != st.browseType) it.copy(browseLoading = false)

@@ -280,7 +280,12 @@ data class TmdbGenre(val id: Int, val name: String) {
         val TRENDING = TmdbGenre(-1, "Trendy")
         val POPULAR = TmdbGenre(-2, "Populárne")
         val TOP_RATED = TmdbGenre(-3, "Najlepšie hodnotené")
-        val LISTS = listOf(TRENDING, POPULAR, TOP_RATED)
+        val SLOVAK = TmdbGenre(-4, "Slovenské")
+        val CZECH = TmdbGenre(-5, "České")
+        val LISTS = listOf(TRENDING, POPULAR, TOP_RATED, SLOVAK, CZECH)
+
+        /** ISO origin country behind the country pseudo-genres. */
+        fun country(g: TmdbGenre): String? = when (g) { SLOVAK -> "SK"; CZECH -> "CZ"; else -> null }
 
         fun category(g: TmdbGenre): TmdbApi.Category? = when (g) {
             TRENDING -> TmdbApi.Category.TRENDING
