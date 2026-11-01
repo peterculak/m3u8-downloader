@@ -60,6 +60,10 @@ class AppSettings(context: Context) {
         get() = prefs.getString("stvr_show_order", null)?.split(",")?.filter { it.isNotBlank() } ?: STVR_SHOWS.map { it.name }
         set(v) = prefs.edit { putString("stvr_show_order", v.joinToString(",")) }
 
+    /** Last selected 2nd-level chip per tab ("ta3", "stvr", "tyzden", "yt"). */
+    fun selectedChip(tab: String): String? = prefs.getString("selected_chip_$tab", null)
+    fun setSelectedChip(tab: String, name: String) = prefs.edit { putString("selected_chip_$tab", name) }
+
     var ytChannelOrder: List<String>
         get() = prefs.getString("yt_channel_order", null)?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
         set(v) = prefs.edit { putString("yt_channel_order", v.joinToString(",")) }

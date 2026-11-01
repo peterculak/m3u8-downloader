@@ -151,7 +151,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             stvrShows = getSortedStvrShows(settings),
             tyzdenShows = getSortedTyzdenShows(settings),
             allYtChannels = getSortedYtChannels(settings),
-            selectedYtChannel = getSortedYtChannels(settings).firstOrNull(),
+            selectedShow = getSortedTa3Shows(settings).let { l -> l.firstOrNull { it.name == settings.selectedChip("ta3") } ?: l.firstOrNull() ?: TA3_SHOWS[0] },
+            selectedStvrShow = getSortedStvrShows(settings).let { l -> l.firstOrNull { it.name == settings.selectedChip("stvr") } ?: l.firstOrNull() ?: STVR_SHOWS[0] },
+            selectedTyzdenShow = getSortedTyzdenShows(settings).let { l -> l.firstOrNull { it.name == settings.selectedChip("tyzden") } ?: l.firstOrNull() ?: Show("", "", "") },
+            selectedYtChannel = getSortedYtChannels(settings).let { l -> l.firstOrNull { it.name == settings.selectedChip("yt") } ?: l.firstOrNull() },
             sectionOrder = settings.sectionOrder,
             prehrajEmail = settings.prehrajEmail,
             prehrajPassword = settings.prehrajPassword,
@@ -166,9 +169,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshLogSize()
         loadRegistry()
         observeActiveDownloads()
-        fetchEpisodes(_state.value.ta3Shows.firstOrNull() ?: TA3_SHOWS[0])
-        fetchStvrEpisodes(_state.value.stvrShows.firstOrNull() ?: STVR_SHOWS[0])
-        if (_state.value.tyzdenShows.isNotEmpty()) fetchTyzdenEpisodes(_state.value.tyzdenShows[0])
+        fetchEpisodes(_state.value.selectedShow)
+        fetchStvrEpisodes(_state.value.selectedStvrShow)
+        if (_state.value.tyzdenShows.isNotEmpty()) fetchTyzdenEpisodes(_state.value.selectedTyzdenShow)
         _state.value.selectedYtChannel?.let { fetchYtEpisodes(it) }
         // Auto-login to prehraj.to on startup if credentials are saved
         if (settings.prehrajEmail.isNotEmpty() && settings.prehrajPassword.isNotEmpty()) {
@@ -181,9 +184,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ─── Auto refresh ──────────────────────────────────────────────────────────
+
+    private var lastRefreshMs = System.currentTimeMillis()
+
+    /** Called when the app returns to the foreground: re-fetch the episode lists if they are a few minutes old. */
+    fun refreshIfStale() {
+        val now = System.currentTimeMillis()
+        if (now - lastRefreshMs < 5 * 60_000L) return
+        lastRefreshMs = now
+        AppLogger.i("MainViewModel", "Foreground refresh of episode lists")
+        loadRegistry()
+        val st = _state.value
+        fetchEpisodes(st.selectedShow)
+        fetchStvrEpisodes(st.selectedStvrShow)
+        if (st.tyzdenShows.isNotEmpty()) fetchTyzdenEpisodes(st.selectedTyzdenShow)
+        st.selectedYtChannel?.let { fetchYtEpisodes(it) }
+    }
+
     // ─── Shows ─────────────────────────────────────────────────────────────────
 
     fun selectShow(show: Show) {
+        settings.setSelectedChip("ta3", show.name)
         _state.update { it.copy(selectedShow = show) }
         fetchEpisodes(show)
     }
@@ -705,6 +727,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ─── STVR Shows ────────────────────────────────────────────────────────────
 
     fun selectStvrShow(show: Show) {
+        settings.setSelectedChip("stvr", show.name)
         _state.update { it.copy(selectedStvrShow = show) }
         fetchStvrEpisodes(show)
     }
@@ -750,6 +773,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ─── Tyzden Shows ──────────────────────────────────────────────────────────
 
     fun selectTyzdenShow(show: Show) {
+        settings.setSelectedChip("tyzden", show.name)
         _state.update { it.copy(selectedTyzdenShow = show) }
         fetchTyzdenEpisodes(show)
     }
@@ -795,6 +819,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ─── YouTube Channels ──────────────────────────────────────────────────────
 
     fun selectYtChannel(channel: YouTubeChannel) {
+        settings.setSelectedChip("yt", channel.name)
         _state.update { it.copy(selectedYtChannel = channel) }
         fetchYtEpisodes(channel)
     }

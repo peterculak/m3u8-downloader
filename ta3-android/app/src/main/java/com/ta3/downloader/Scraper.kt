@@ -51,8 +51,8 @@ object Scraper {
             val date = match.groupValues[1]
             val content = match.groupValues[2]
 
-            // Extract /relacia/, /clanok/ or /podcast/ link
-            val urlMatch = Regex("""href=["'](/(?:relacia|clanok|podcast)/[^"']+)["']""", RegexOption.IGNORE_CASE)
+            // Extract /relacia/, /clanok/ or /podcast/ link (TA3 now nests them: /relacie/<show>/relacia/<id>/<slug>)
+            val urlMatch = Regex("""href=["'](/(?:[a-z0-9-]+/){0,2}(?:relacia|clanok|podcast)/[^"']+)["']""", RegexOption.IGNORE_CASE)
                 .find(content) ?: continue
             val url = "https://www.ta3.com${urlMatch.groupValues[1]}"
 

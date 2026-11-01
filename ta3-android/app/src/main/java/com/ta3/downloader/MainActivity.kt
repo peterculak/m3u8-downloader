@@ -26,6 +26,11 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* granted or denied — worker still runs, just won't notify */ }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.refreshIfStale()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
